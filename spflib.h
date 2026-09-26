@@ -1,6 +1,14 @@
 #ifndef SPFLIB_H
 #define SPFLIB_H
 
+#if defined(_MSC_VER) && _MSC_VER < 1944
+#   error("MSVC version at least 19.44 is required.")
+#elif defined(__GNUC__) && __GNUC__ < 8
+#   error("GCC version at least 8.1 is required.")
+#elif defined(__clang__) && __clang_major__ < 12
+#   error("Clang version at least 12 is required.")
+#endif
+
 #if defined(__GNUC__)
 #   pragma GCC diagnostic push
 #   pragma GCC diagnostic ignored "-Wunused-function"
@@ -9,7 +17,7 @@
 #   pragma clang diagnostic ignored "-Wunused-function"
 #elif defined(_MSC_VER)
 #   pragma warning( push )
-#   pragma warning( disable : 4505 )
+#   pragma warning( disable : 4005 4505 5045 5110 )
 #endif
 
 // -- utils -- //
@@ -18,7 +26,6 @@
 
 // TODO:
 // - scratch buffer(linear allocator) for temporary allocation
-// - logger
 // - is nan anf infinity checks
 // - custom snprintf
 // - string to int, string to float etc
@@ -26,6 +33,9 @@
 // - support more compilers
 // - reflection
 // - window creation (RGFW) and opengl context
+// - inline vec2 and other small functions 
+// - file io
+// - matrices
 
 #if defined(_WIN32)
 #   define OS_WINDOWS
@@ -37,18 +47,18 @@
 #	define OS_POSIX
 #else
 #	define OS_UNKOWN
-#   warning "Unknown OS."
+#   pragma message("Unknown OS.")
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) && !defined(__clang__)
 #	define COMPILER_GCC
 #elif defined(__clang__)
 #	define COMPILER_CLANG
-#elif defined(_MSC_VER)
+#elif defined(_MSC_VER) && !defined(__clang__)
 #	define COMPILER_MSVC
 #else
 #	define COMPILER_UNKNOWN
-#   warning "Unkown C compiler."
+#   pragma message("Unkown C compiler.")
 #endif
 
 #if defined(__STDC_VERSION__)
@@ -62,8 +72,12 @@
 #	    define STDC_VER 23
 #   else
 #	    define STDC_UNKNOWN
-#       warning "Unkown C standard."
+#       pragma message("Unkown C standard.")
 #   endif
+#endif
+
+#if STDC_VER < 11
+#   pragma message("At least version C11 is recommended for most features to work correctly.")
 #endif
 
 #if STDC_VER < 23
@@ -86,13 +100,26 @@
 #   define thread_local   _Thread_local
 #endif
 
+#if STDC_VER >= 11
+#   define atomic         _Atomic
+#endif
+
+#if STDC_VER < 23
+#   if defined(COMPILER_GCC) || defined(COMPILER_CLANG)
+#       define typeof(x)        __typeof(x)
+#       define typeof_unqual(x) __typeof_unqual(x)
+#   elif defined(COMPILER_MSVC)
+#       define typeof(x)        __typeof__(x)
+#       define typeof_unqual(x) __typeof_unqual__(x)
+#   endif
+#endif
+
 #if !defined(offsetof)
 #   define offsetof(_s, _m) (size_t)&(((_s*)0)->_m)
 #endif
 
 typedef uint8_t  u8;
 typedef int8_t   s8;
-typedef uint8_t  byte;
 
 typedef uint16_t u16;
 typedef int16_t  s16;
@@ -103,14 +130,18 @@ typedef int32_t  s32;
 typedef uint64_t u64;
 typedef int64_t  s64;
 
-typedef float    float32;
-typedef double   float64;
+typedef float    f32;
+typedef double   f64;
+
+#define SPF_PI        3.14159265358979323846264338327950288
+#define SPF_PI_2      1.57079632679489661923132169163975144
+#define SPF_PI_4      0.78539816339744830961566084581987572
 
 #if STDC_VER >= 11
 
 #define SWAP_TYPES(_fn) \
-    _fn(float) \
-    _fn(double) \
+    _fn(f32) \
+    _fn(f64) \
     _fn(s8) \
     _fn(u8) \
     _fn(s32) \
@@ -152,9 +183,11 @@ SWAP_TYPES(MAKE_SWAP_FN)
 
 #include <stdio.h>
 
+#define SPF_WILL_ASSERT 1
+
 #define SPF_ASSERT(_cond, _msg) \
     do { \
-        if (!_cond) { \
+        if (!(_cond)) { \
             printf("Assertion failed in '%s' at '%d', with message '%s'\n", __FILE__, __LINE__, _msg); \
             abort(); \
         } \
@@ -167,7 +200,7 @@ SWAP_TYPES(MAKE_SWAP_FN)
 
 // --- allocators --- //
 
-#if !defined(SPFLIB_NO_ALLOCATORS)
+#if defined(SPFLIB_ALLOCATORS)
 
 // TODO: replace with rpmalloc
 #include <stdlib.h>    // malloc, free
@@ -193,7 +226,12 @@ static BumpAllocator bump_new(size_t capacity)
 static void* bump_alloc(BumpAllocator* ac, size_t size)
 {
     if (ac->data == nullptr)                    return nullptr;
-    if ((size + ac->pos_bytes) >= ac->capacity) return nullptr; // TODO: assert
+    if ((size + ac->pos_bytes) >= ac->capacity) {
+#if defined(SPF_WILL_ASSERT)
+        SPF_ASSERT(0, "Bump allocator capacity exceeded.");
+#endif
+        return nullptr; 
+    }
 
     ac->data      += size;
     ac->pos_bytes += size;
@@ -216,7 +254,7 @@ static void bump_delete(BumpAllocator* ac)
     ac->data      = nullptr;
 }
 
-#endif // !defined(SPFLIB_NO_ALLOCATORS)
+#endif // defined(SPFLIB_ALLOCATORS)
 
 // --- string --- //
 
@@ -254,110 +292,121 @@ static size_t str_len(const char* str)
 
 static string str_create(const char* cstr)
 {
-	return (string){ .data = cstr, .len = str_len(cstr) };
+	return (string){
+        .data = cstr,
+        .len  = str_len(cstr)
+    };
 }
 
 static string str_create_sub(const char* cstr, size_t length)
 {
-	return (string){ .data = cstr, .len = length };
+	return (string){ 
+        .data = cstr,
+        .len  = length
+    };
 }
 
-static _Bool str_is_valid(string str)
+static bool str_is_valid(string str)
 {
-	if (str.data == NULL) return 0;
-	if (str.len <= 0) return 0;
-	return 1;
+	if (str.data == nullptr) return false;
+	if (str.len  <= 0)       return false;
+	return true;
 }
 
-static _Bool str_compare_str(string str1, string str2)
+static bool str_compare_str(string str1, string str2)
 {
-	if (!str_is_valid(str1)) return 0;
-	if (!str_is_valid(str2)) return 0;
+	if (!str_is_valid(str1))  return false;
+	if (!str_is_valid(str2))  return false;
 
-    if (str1.len != str2.len) return 0;
+    if (str1.len != str2.len) return false;
 
     size_t c = 0;
     while (c < str1.len) {
-        if (str1.data[c] != str2.data[c]) return 0;
+        if (str1.data[c] != str2.data[c]) 
+            return false;
         c++;
     }
 
-    return 1;
+    return true;
 }
 
-static _Bool str_compare_cstr(string str, const char* cstr)
+static bool str_compare_cstr(string str, const char* cstr)
 {
-	if (!str_is_valid(str)) return 0;
+	if (!str_is_valid(str))  return false;
 
     size_t cstr_len = str_len(cstr);
-	if (cstr_len == 0) return 0;
-    if (str.len != cstr_len) return 0;
+	if (cstr_len == 0)       return false;
+    if (str.len  != cstr_len) return false;
 
     size_t c = 0;
     while (c < str.len) {
-        if (str.data[c] != cstr[c]) return 0;
+        if (str.data[c] != cstr[c]) 
+            return false;
         c++;
     }
 
-    return 1;
+    return true;
 }
 
-static _Bool str_starts_with(string str, const char* cstr)
+static bool str_starts_with(string str, const char* cstr)
 {
-	if (!str_is_valid(str)) return 0;
+	if (!str_is_valid(str)) return false;
 
 	size_t cstr_len = str_len(cstr);
-	if (cstr_len == 0) return 0;
+	if (cstr_len == 0)      return false;
 
     // string is shorter than sub str
-    if (str.len < cstr_len) return 0;
+    if (str.len < cstr_len) return false;
 
     size_t c = 0;
     while (c < cstr_len) {
-        if (str.data[c] != cstr[c]) return 0;
+        if (str.data[c] != cstr[c]) 
+            return false;
         c++;
     }
 
-    return 1;
+    return true;
 }
 
-static _Bool str_ends_with(string str, const char* cstr)
+static bool str_ends_with(string str, const char* cstr)
 {
-	if (!str_is_valid(str)) return 0;
+	if (!str_is_valid(str)) return false;
 
 	size_t cstr_len = str_len(cstr);
-	if (cstr_len == 0) return 0;
+	if (cstr_len == 0)      return false;
 
     // string is shorter than the sub str
-    if (str.len < cstr_len) return 0;
+    if (str.len < cstr_len) return false;
 
     size_t c = 0;
     while (c < cstr_len) {
-        if (cstr[c] != str.data[c + (str.len - cstr_len)]) return 0;
+        if (cstr[c] != str.data[c + (str.len - cstr_len)]) 
+            return false;
         c++;
     }
 
-    return 1;
+    return true;
 }
 
-static _Bool str_contains(string str, const char* cstr)
+static bool str_contains(string str, const char* cstr)
 {
-	if (!str_is_valid(str)) return 0;
+	if (!str_is_valid(str)) return false;
 
 	size_t cstr_len = str_len(cstr);
-	if (cstr_len == 0) return 0;
+	if (cstr_len == 0)      return false;
 
     // string is shorter than the sub str
-    if (str.len < cstr_len) return 0;
+    if (str.len < cstr_len) return false;
 
 	size_t i = 0;
 	while (i < str.len) {
 		char str_char = str.data[i];
+
 		if (str_char == cstr[0]) {
 			string substr = str_create_sub(&str.data[i], cstr_len);
 
 			if (str_compare_str(substr, str))
-				return 1;
+				return true;
 			else {
 				i++;
 				continue;
@@ -366,35 +415,43 @@ static _Bool str_contains(string str, const char* cstr)
 		i++;
 	}
 
-	return 0;
+	return false;
 }
 
 static string str_substr(string str, size_t pos, size_t count)
 {
-	if (!str_is_valid(str)) return str;
-	if (pos >= str.len) return str;
+	if (!str_is_valid(str))                                 return str;
+	if (pos   >= str.len)                                   return str;
 	if (count >= str.len || ((pos - 1) + count) >= str.len) return str;
 
-	return (string){.data = str.data + pos, .len = count};
+	return (string){
+        .data = str.data + pos,
+        .len  = count
+    };
 }
 
 static string str_clip_prefix(string str, size_t count)
 {
 	if (!str_is_valid(str)) return str;
-	if (count >= str.len) return str;
+	if (count >= str.len)   return str;
 
-	return (string){.data = str.data + count, .len = str.len - count};
+	return (string){
+        .data = str.data + count,
+        .len  = str.len - count
+    };
 }
 
 static string str_clip_suffix(string str, size_t count)
 {
-	if (!str_is_valid(str)) return str;
+	if (!str_is_valid(str))     return str;
 	if ((str.len - count) <= 0) return str;
 
-	return (string){.data = str.data, .len = str.len - count};
+	return (string){
+        .data = str.data,
+        .len  = str.len - count
+    };
 }
 
-// #endif // SPFLIB_STRING_IMPL
 #endif // SPFLIB_NO_STRING
 
 // --- vector 2 --- //
@@ -405,30 +462,41 @@ static string str_clip_suffix(string str, size_t count)
 
 typedef struct
 {
-    // union {
-    //     struct {
-    //         float x, y;
-    //     };
-    //     float v[2];
-    // };
-
-    float x, y;
+    union {
+        struct {
+            float x, y;
+        };
+        float v[2];
+    };
 } Vec2;
 
+#define __Vec2_Args(_1, _2, x, ...) x
+#define Vec2(...) __Vec2_Args(__VA_ARGS__, vec2_init(__VA_ARGS__), vec2_make(__VA_ARGS__))
+
+Vec2 vec2_make(float xy)
+{
+    return (Vec2){ .x = xy, .y = xy };
+}
+
+Vec2 vec2_init(float x, float y)
+{
+    return (Vec2){ .x = x, .y = y };
+}
+
 #if STDC_VER >= 11
-    #define vec2_add(v, s) _Generic((s),  \
+    #define vec2_add(v, s) _Generic((s), \
         Vec2: vec2_addv, \
         float: vec2_adds \
     ) ((v), (s))
-    #define vec2_sub(v, s) _Generic((s),  \
+    #define vec2_sub(v, s) _Generic((s), \
         Vec2: vec2_subv, \
         float: vec2_subs \
     ) ((v), (s))
-    #define vec2_scale(v, s) _Generic((s),  \
+    #define vec2_scale(v, s) _Generic((s), \
         Vec2: vec2_mulv, \
         float: vec2_muls \
     ) ((v), (s))
-    #define vec2_div(v, s) _Generic((s),  \
+    #define vec2_div(v, s) _Generic((s), \
         Vec2: vec2_divv, \
         float: vec2_divs \
     ) ((v), (s))
@@ -436,42 +504,42 @@ typedef struct
 
 Vec2 vec2_addv(Vec2 a, Vec2 b)
 {
-    return (Vec2){ a.x + b.x, a.y + b.y };
+    return (Vec2){ .x = a.x + b.x, .y = a.y + b.y };
 }
 
 Vec2 vec2_adds(Vec2 a, float s)
 {
-    return (Vec2){ a.x + s, a.y + s };
+    return (Vec2){ .x = a.x + s, .y = a.y + s };
 }
 
 Vec2 vec2_subv(Vec2 a, Vec2 b)
 {
-    return (Vec2){ a.x - b.x, a.y - b.y };
+    return (Vec2){ .x = a.x - b.x, .y = a.y - b.y };
 }
 
 Vec2 vec2_subs(Vec2 a, float s)
 {
-    return (Vec2){ a.x - s, a.y - s };
+    return (Vec2){ .x = a.x - s, .y = a.y - s };
 }
 
 Vec2 vec2_mulv(Vec2 a, Vec2 b)
 {
-    return (Vec2){ a.x * b.x, a.y * b.y };
+    return (Vec2){ .x = a.x * b.x, .y = a.y * b.y };
 }
 
 Vec2 vec2_muls(Vec2 v, float s)
 {
-    return (Vec2){ v.x * s, v.y * s };
+    return (Vec2){ .x = v.x * s, .y = v.y * s };
 }
 
 Vec2 vec2_divv(Vec2 a, Vec2 b)
 {
-    return (Vec2){ a.x / b.x, a.y / b.y };
+    return (Vec2){ .x = a.x / b.x, .y = a.y / b.y };
 }
 
 Vec2 vec2_divs(Vec2 a, float s)
 {
-    return (Vec2){ a.x / s, a.y / s };
+    return (Vec2){ .x = a.x / s, .y = a.y / s };
 }
 
 //
@@ -496,14 +564,14 @@ Vec2 vec2_norm(Vec2 v)
     float len = vec2_mag(v);
     if (len <= 0.f) return (Vec2){0};
 
-    return (Vec2){ v.x * (1.f / len), v.y * (1.f / len) };
+    return (Vec2){ .x = v.x * (1.f / len), .y = v.y * (1.f / len) };
 }
 
 Vec2 vec2_lerp(Vec2 a, Vec2 b, float s)
 {
     return (Vec2){
-        a.x + s * (b.x - a.x),
-        a.y + s * (b.y - a.y)
+        .x = a.x + s * (b.x - a.x),
+        .y = a.y + s * (b.y - a.y)
     };
 }
 
@@ -518,10 +586,12 @@ Vec2 vec2_lerp(Vec2 a, Vec2 b, float s)
 // - make registering custom print types better by not having to remember the last index
 // - make '%' printable
 // - add support for formatting e.g. (%.*, %02 etc.)
+// - change printing format from '%' to '{}'
 
 #include <stddef.h>   // size_t
 #include <stdio.h>    // fprintf, putc
 #include <stdarg.h>   // va_list
+#include <string.h>   // strncat
 
 #define __N_VA_ARGS_(_100,_99,_98,_97,_96,_95,_94,_93,_92,_91,_90,_89,_88,_87,_86,_85,_84,_83,_82,_81,_80,_79,_78,_77,_76,_75,_74,_73,_72,_71,_70,_69,_68,_67,_66,_65,_64,_63,_62,_61,_60,_59,_58,_57,_56,_55,_54,_53,_52,_51,_50,_49,_48,_47,_46,_45,_44,_43,_42,_41,_40,_39,_38,_37,_36,_35,_34,_33,_32,_31,_30,_29,_28,_27,_26,_25,_24,_23,_22,_21,_20,_19,_18,_17,_16,_15,_14,_13,_12,_11,_10,_9,_8,_7,_6,_5,_4,_3,_2,_1, N, ...) N
 #define __N_VA_ARGS(...) __N_VA_ARGS_(__VA_ARGS__ __VA_OPT__(,) 100,99,98,97,96,95,94,93,92,91,90,89,88,87,86,85,84,83,82,81,80,79,78,77,76,75,74,73,72,71,70,69,68,67,66,65,64,63,62,61,60,59,58,57,56,55,54,53,52,51,50,49,48,47,46,45,44,43,42,41,40,39,38,37,36,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
@@ -944,6 +1014,10 @@ typedef enum
     }
 #endif
 
+#if defined(COMPILER_MSVC)
+#   include <malloc.h>    // _alloca
+#endif
+
 static void __print(FILE* stream, const char* fmt, size_t arg_count, ...)
 {
     if (arg_count == 0) {
@@ -958,14 +1032,23 @@ static void __print(FILE* stream, const char* fmt, size_t arg_count, ...)
 
     size_t fmt_len = str_len(fmt);
 
+#if defined(COMPILER_MSVC)
+    __ArgType* arg_types = _alloca(sizeof(__ArgType) * arg_count);
+#else
     __ArgType arg_types[arg_count];
+#endif
+
     for (size_t i = 0; i < arg_count; i++) {
-         arg_types[i] = (__ArgType)va_arg(list, int);
+        arg_types[i] = (__ArgType)va_arg(list, int);
     }
 
     va_arg(list, int); // drain the useless 0
 
     size_t current_arg_type = 0;
+
+    // if (fmt[c] == '{' &&
+    //     ((c + 1) <= fmt_len) &&
+    //     fmt[c + 1] != '\0')
 
     size_t c = 0;
     while (c < fmt_len) {
@@ -973,7 +1056,20 @@ static void __print(FILE* stream, const char* fmt, size_t arg_count, ...)
             ((c + 1) <= fmt_len) &&
             fmt[c + 1] != '%')
         {
+            // char format[64];
+            // format[0] = '%';
+
+            // size_t n = c + 1;
+            // size_t i = 1;
+
+            // while (n <= fmt_len) {
+            //     if (fmt[n] == '}') break;
+            //     format[i] = fmt[n];
+            //     n++;
+            // }
+
             __ArgType type = arg_types[current_arg_type];
+            // strncat(format + i, _fmt, sizeof(_fmt));
 
             #define __TYPE_CASE(_up, _lw, _fmt, ...) \
                 case __ARG_TYPE_##_up: { \
@@ -1067,12 +1163,6 @@ SPF_CUSTOM_CASE(16)
 
             current_arg_type++;
         }
-        // else if (fmt[c] == '%' &&
-        //     ((c + 1) <= fmt_len) &&
-        //     fmt[c + 1] != '%')
-        // {
-        //     putc('%', stream);
-        // }
         else {
             putc(fmt[c], stream);
         }
@@ -1114,7 +1204,10 @@ typedef enum
 
 #define LOG(_lvl, _msg, ...) __spf_log(__SPF_LEVEL_##_lvl, _msg __VA_OPT__(, __VA_ARGS__))
 
-// TODO: add suport for spf io printing
+// TODO: 
+// - add suport for spf io printing
+// - add file logging
+
 static void __spf_log(__SPF_Level lvl, const char* msg, ...)
 {
     va_list list;
@@ -1171,7 +1264,7 @@ static void __spf_log(__SPF_Level lvl, const char* msg, ...)
     va_end(list);
 }
 
-#endif // !defined(SPFLIB_LOG_TIME)
+#endif // !defined(SPFLIB_NO_LOGGER)
 
 #if defined(__GNUC__)
 #   pragma GCC diagnostic pop
@@ -1179,6 +1272,11 @@ static void __spf_log(__SPF_Level lvl, const char* msg, ...)
 #   pragma clang diagnostic pop
 #elif defined(_MSC_VER)
 #   pragma warning( pop )
+#endif
+
+// disable warning about using __VA_OPT__ prior to C23
+#if defined(COMPILER_MSVC) && STDC_VER < 23
+#   pragma warning( disable : 5110 )
 #endif
 
 #endif // SPFLIB_H
