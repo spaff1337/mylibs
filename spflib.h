@@ -45,6 +45,7 @@
 // - customizable lerp
 // - profiling
 // - platform specific actions like making directories, clipboard
+// - dynamic array, hashmap
 
 #if defined(_WIN32)
 #   define OS_WINDOWS
@@ -126,6 +127,7 @@
 
 #if !defined(offsetof)
 #   define offsetof(_s, _m) (size_t)&(((_s*)0)->_m)
+#   define offsetof_ptr(_s, _m) (size_t)&(((_s*)0)->*_m)
 #endif
 
 typedef uint8_t  u8;
@@ -155,20 +157,22 @@ typedef double   f64;
 #define TO_GiB(_n)   TO_MiB((_n)) / 1024
 #define TO_TiB(_n)   TO_GiB((_n)) / 1024
 
+// TODO: add nan and inf checks
+
 #define SWAP_TYPES(_fn) \
-    _fn(f32) \
-    _fn(f64) \
-    _fn(s8) \
-    _fn(u8) \
-    _fn(s32) \
-    _fn(u32) \
-    _fn(s64) \
-    _fn(u64) \
+    _fn(f32)            \
+    _fn(f64)            \
+    _fn(s8)             \
+    _fn(u8)             \
+    _fn(s32)            \
+    _fn(u32)            \
+    _fn(s64)            \
+    _fn(u64)            \
 
 #define INVALID_MATCH default: (void(*)(void))0
 // #define DEFINE_MATCH(_type, b) _type*: _Generic((b), _type* swap_##_type, INVALID_MATCH),
 
-#define swap(a, b) _Generic((a), \
+#define swap(a, b) _Generic((a),                                                         \
     float*:              _Generic((b), float*:              swap_float,  INVALID_MATCH), \
     double*:             _Generic((b), double*:             swap_double, INVALID_MATCH), \
     signed char*:        _Generic((b), signed char*:        swap_s8,     INVALID_MATCH), \
@@ -180,12 +184,12 @@ typedef double   f64;
     INVALID_MATCH \
 ) (a, b)
 
-#define MAKE_SWAP_FN(_type) \
+#define MAKE_SWAP_FN(_type)                      \
     static void swap_##_type(_type* a, _type* b) \
-    { \
-        _type temp = *a; \
-        *a = *b; \
-        *b = temp; \
+    {                                            \
+        _type temp = *a;                         \
+        *a = *b;                                 \
+        *b = temp;                               \
     }
 
 SWAP_TYPES(MAKE_SWAP_FN)
@@ -219,15 +223,27 @@ static LinuxWindowingSystem linux_windowing_system()
 
 #if defined(OS_WINDOWS)
 #   include <windows.h>
+
 // thanks windows very cool 👍
+#ifdef near
 #   undef near
-#   undef far 
-#   include <Lmcons.h>      // UNLEN
+#endif
+#ifdef far
+#   undef far
+#endif
+#ifdef min
+#   undef min
+#endif
+#ifdef max
+#   undef max
+#endif
+
+#   include <Lmcons.h>    // UNLEN
 #elif defined(OS_POSIX)
-#   include <sys/types.h>   // uid_t
-#   include <unistd.h>      // rmdir, geteuid
-#   include <pwd.h>         // geteuid, getpwuid
-#   include <stdlib.h>      // getenv
+#   include <sys/types.h> // uid_t
+#   include <unistd.h>    // rmdir, geteuid
+#   include <pwd.h>       // geteuid, getpwuid
+#   include <stdlib.h>    // getenv
 #endif
 
 static const char* os_user_name()
@@ -263,12 +279,12 @@ static const char* os_user_name()
 
 #define SPF_WILL_ASSERT 1
 
-#define SPF_ASSERT(_cond, _msg) \
-    do { \
-        if (!(_cond)) { \
+#define SPF_ASSERT(_cond, _msg)                                                                       \
+    do {                                                                                              \
+        if (!(_cond)) {                                                                               \
             printf("Assertion failed in '%s' at '%d', with message '%s'\n", __FILE__, __LINE__, _msg); \
-            abort(); \
-        } \
+            abort();                                                                                  \
+        }                                                                                             \
     } while (0)
 
 #else // defined(NDEBUG) && defined(SPFLIB_ASSERT_IN_RELEASE) || !defined(NDEBUG)
@@ -518,21 +534,21 @@ static Vec2 vec2_init(float x, float y)
     return (Vec2){ .x = x, .y = y };
 }
 
-#define vec2_add(v, s) _Generic((s), \
-    Vec2: vec2_addv, \
-    float: vec2_adds \
+#define vec2_add(v, s) _Generic((s),   \
+    Vec2: vec2_addv,                   \
+    float: vec2_adds                   \
 ) ((v), (s))
-#define vec2_sub(v, s) _Generic((s), \
-    Vec2: vec2_subv, \
-    float: vec2_subs \
+#define vec2_sub(v, s) _Generic((s),   \
+    Vec2: vec2_subv,                   \
+    float: vec2_subs                   \
 ) ((v), (s))
 #define vec2_scale(v, s) _Generic((s), \
-    Vec2: vec2_mulv, \
-    float: vec2_muls \
+    Vec2: vec2_mulv,                   \
+    float: vec2_muls                   \
 ) ((v), (s))
-#define vec2_div(v, s) _Generic((s), \
-    Vec2: vec2_divv, \
-    float: vec2_divs \
+#define vec2_div(v, s) _Generic((s),   \
+    Vec2: vec2_divv,                   \
+    float: vec2_divs                   \
 ) ((v), (s))
 
 static Vec2 vec2_addv(Vec2 a, Vec2 b)
@@ -639,21 +655,21 @@ static Vec3 vec3_init(float x, float y, float z)
     return (Vec3){ .x = x, .y = y, .z = z };
 }
 
-#define vec3_add(v, s) _Generic((s), \
-    Vec3: vec3_addv, \
-    float: vec3_adds \
+#define vec3_add(v, s) _Generic((s),   \
+    Vec3: vec3_addv,                   \
+    float: vec3_adds                   \
 ) ((v), (s))
-#define vec3_sub(v, s) _Generic((s), \
-    Vec3: vec3_subv, \
-    float: vec3_subs \
+#define vec3_sub(v, s) _Generic((s),   \
+    Vec3: vec3_subv,                   \
+    float: vec3_subs                   \
 ) ((v), (s))
 #define vec3_scale(v, s) _Generic((s), \
-    Vec3: vec3_mulv, \
-    float: vec3_muls \
+    Vec3: vec3_mulv,                   \
+    float: vec3_muls                   \
 ) ((v), (s))
-#define vec3_div(v, s) _Generic((s), \
-    Vec3: vec3_divv, \
-    float: vec3_divs \
+#define vec3_div(v, s) _Generic((s),   \
+    Vec3: vec3_divv,                   \
+    float: vec3_divs                   \
 ) ((v), (s))
 
 static Vec3 vec3_addv(Vec3 a, Vec3 b)
@@ -791,30 +807,30 @@ typedef struct
     };
 } Mat4;
 
-#define mat4_scale(a, b) _Generic((b), \
-    Mat4:  mat4_scalem, \
-    float: mat4_scalef \
+#define mat4_scale(a, b) _Generic((b),   \
+    Mat4:  mat4_scalem,                  \
+    float: mat4_scalef                   \
 ) ((a), (b))
 
 #if defined(SPFLIB_VEC3)
     #define mat4_mul(a, b) _Generic((b), \
-        Mat4:  mat4_mulm, \
-        Vec3:  mat4_mulv3 \
+        Mat4:  mat4_mulm,                \
+        Vec3:  mat4_mulv3                \
     ) ((a), (b))
 #else
     #define mat4_mul(a, b) _Generic((b), \
-        Mat4:  mat4_mulm \
+        Mat4:  mat4_mulm                 \
     ) ((a), (b))
 #endif
 
 #define __mat4_translate_args(_1, _2, _3, x, ...) x
-#define mat4_translate(...) __mat4_translate_args(__VA_ARGS__,  \
-                                mat4_translatev(__VA_ARGS__),\
+#define mat4_translate(...) __mat4_translate_args(__VA_ARGS__,     \
+                                mat4_translatev(__VA_ARGS__),      \
                                 mat4_translatev(__VA_ARGS__, 0.f), \
                                 mat4_translatev3(__VA_ARGS__))
 
 #define Mat4(_m) mat4_uniform((_m))
-#define mat4_ptr(_m) &_m.m0
+#define mat4_value_ptr(_m) &_m.m0
 
 static Mat4 mat4_identity()
 {
@@ -1475,54 +1491,54 @@ static float mat4_trace(Mat4 m)
 #   error "No more custom print slots available."
 #endif
 
-#define CAT(a, b) CAT_(a, b)
-#define CAT_(a, b) a ## b
+#define __CAT(a, b) __CAT_(a, b)
+#define __CAT_(a, b) a ## b
 
 #define __SPF_CUSTOM_CASE_ARG(_1, _2, x, ...) x
 #define __SPF_CUSTOM_CASE_PRINT(_n)    fprintf(stream, SPF_CUSTOM_PRINT_TYPE_FMT_##_n);
 #define __SPF_CUSTOM_CASE_SPRINT(_n)   if (buff_pos >= buff_sz - 1) goto end; int n = snprintf(buff + buff_pos, (buff_sz - buff_pos), SPF_CUSTOM_PRINT_TYPE_FMT_##_n); buff_pos += n;
 
-#define SPF_CUSTOM_CASE(_n, ...) \
-    case CAT(__ARG_TYPE_, SPF_CUSTOM_PRINT_TYPE_##_n): { \
-        SPF_CUSTOM_PRINT_TYPE_##_n t = va_arg(list, SPF_CUSTOM_PRINT_TYPE_##_n); \
+#define SPF_CUSTOM_CASE(_n, ...)                                                                      \
+    case __CAT(__ARG_TYPE_, SPF_CUSTOM_PRINT_TYPE_##_n): {                                            \
+        SPF_CUSTOM_PRINT_TYPE_##_n t = va_arg(list, SPF_CUSTOM_PRINT_TYPE_##_n);                      \
         __SPF_CUSTOM_CASE_ARG(__VA_ARGS__, __SPF_CUSTOM_CASE_PRINT(_n), __SPF_CUSTOM_CASE_SPRINT(_n)) \
-        break; \
+        break;                                                                                        \
     }
 
 // #define SPF_CUSTOM_PRINT_TYPE_0      Entity
 // #define SPF_CUSTOM_PRINT_TYPE_FMT_0  fprintf(stream, "{ health: %d, max_health: %d }", t.health, t.max_health)
 
 
-#define __ITER_TYPES(_fn, ...)                                                \
-    _fn(BOOL,                _Bool,                           "", ...)__COMMA \
-    _fn(FLOAT,               float,                           "", ...)__COMMA \
-    _fn(DOUBLE,              double,                          "", ...)__COMMA \
-    _fn(CSTR,                const char*,                     "", ...)__COMMA \
-    _fn(STR,                 char*,                           "", ...)__COMMA \
-    _fn(CHAR,                char,                            "", ...)__COMMA \
-    _fn(SCHAR,               signed char,                     "", ...)__COMMA \
-    _fn(UCHAR,               unsigned char,                   "", ...)__COMMA \
-    _fn(SINT16,              signed short,                    "", ...)__COMMA \
-    _fn(UINT16,              unsigned short,                  "", ...)__COMMA \
-    _fn(SINT32,              signed int,                      "", ...)__COMMA \
-    _fn(UINT32,              unsigned int,                    "", ...)__COMMA \
-    _fn(SLONG,               signed long,                     "", ...)__COMMA \
-    _fn(ULONG,               unsigned long,                   "", ...)__COMMA \
-    _fn(SLLONG,              signed long long,                "", ...)__COMMA \
-    _fn(ULLONG,              unsigned long long,              "", ...)__COMMA \
-    SPF_STRING_TYPE(_fn) \
-    SPF_VEC2_TYPE(_fn) \
-    SPF_VEC3_TYPE(_fn) \
-    REGISTER_CUSTOM_TYPE_0(_fn, SPF_CUSTOM_PRINT_TYPE_0, SPF_CUSTOM_PRINT_TYPE_FMT_0) \
-    REGISTER_CUSTOM_TYPE_1(_fn, SPF_CUSTOM_PRINT_TYPE_1, SPF_CUSTOM_PRINT_TYPE_FMT_1) \
-    REGISTER_CUSTOM_TYPE_2(_fn, SPF_CUSTOM_PRINT_TYPE_2, SPF_CUSTOM_PRINT_TYPE_FMT_2) \
-    REGISTER_CUSTOM_TYPE_3(_fn, SPF_CUSTOM_PRINT_TYPE_3, SPF_CUSTOM_PRINT_TYPE_FMT_3) \
-    REGISTER_CUSTOM_TYPE_4(_fn, SPF_CUSTOM_PRINT_TYPE_4, SPF_CUSTOM_PRINT_TYPE_FMT_4) \
-    REGISTER_CUSTOM_TYPE_5(_fn, SPF_CUSTOM_PRINT_TYPE_5, SPF_CUSTOM_PRINT_TYPE_FMT_5) \
-    REGISTER_CUSTOM_TYPE_6(_fn, SPF_CUSTOM_PRINT_TYPE_6, SPF_CUSTOM_PRINT_TYPE_FMT_6) \
-    REGISTER_CUSTOM_TYPE_7(_fn, SPF_CUSTOM_PRINT_TYPE_7, SPF_CUSTOM_PRINT_TYPE_FMT_7) \
-    REGISTER_CUSTOM_TYPE_8(_fn, SPF_CUSTOM_PRINT_TYPE_8, SPF_CUSTOM_PRINT_TYPE_FMT_8) \
-    REGISTER_CUSTOM_TYPE_9(_fn, SPF_CUSTOM_PRINT_TYPE_9, SPF_CUSTOM_PRINT_TYPE_FMT_9) \
+#define __ITER_TYPES(_fn, ...)                                                           \
+    _fn(BOOL,                _Bool,                           "", ...)__COMMA            \
+    _fn(FLOAT,               float,                           "", ...)__COMMA            \
+    _fn(DOUBLE,              double,                          "", ...)__COMMA            \
+    _fn(CSTR,                const char*,                     "", ...)__COMMA            \
+    _fn(STR,                 char*,                           "", ...)__COMMA            \
+    _fn(CHAR,                char,                            "", ...)__COMMA            \
+    _fn(SCHAR,               signed char,                     "", ...)__COMMA            \
+    _fn(UCHAR,               unsigned char,                   "", ...)__COMMA            \
+    _fn(SINT16,              signed short,                    "", ...)__COMMA            \
+    _fn(UINT16,              unsigned short,                  "", ...)__COMMA            \
+    _fn(SINT32,              signed int,                      "", ...)__COMMA            \
+    _fn(UINT32,              unsigned int,                    "", ...)__COMMA            \
+    _fn(SLONG,               signed long,                     "", ...)__COMMA            \
+    _fn(ULONG,               unsigned long,                   "", ...)__COMMA            \
+    _fn(SLLONG,              signed long long,                "", ...)__COMMA            \
+    _fn(ULLONG,              unsigned long long,              "", ...)__COMMA            \
+    SPF_STRING_TYPE(_fn)                                                                 \
+    SPF_VEC2_TYPE(_fn)                                                                   \
+    SPF_VEC3_TYPE(_fn)                                                                   \
+    REGISTER_CUSTOM_TYPE_0(_fn, SPF_CUSTOM_PRINT_TYPE_0, SPF_CUSTOM_PRINT_TYPE_FMT_0)    \
+    REGISTER_CUSTOM_TYPE_1(_fn, SPF_CUSTOM_PRINT_TYPE_1, SPF_CUSTOM_PRINT_TYPE_FMT_1)    \
+    REGISTER_CUSTOM_TYPE_2(_fn, SPF_CUSTOM_PRINT_TYPE_2, SPF_CUSTOM_PRINT_TYPE_FMT_2)    \
+    REGISTER_CUSTOM_TYPE_3(_fn, SPF_CUSTOM_PRINT_TYPE_3, SPF_CUSTOM_PRINT_TYPE_FMT_3)    \
+    REGISTER_CUSTOM_TYPE_4(_fn, SPF_CUSTOM_PRINT_TYPE_4, SPF_CUSTOM_PRINT_TYPE_FMT_4)    \
+    REGISTER_CUSTOM_TYPE_5(_fn, SPF_CUSTOM_PRINT_TYPE_5, SPF_CUSTOM_PRINT_TYPE_FMT_5)    \
+    REGISTER_CUSTOM_TYPE_6(_fn, SPF_CUSTOM_PRINT_TYPE_6, SPF_CUSTOM_PRINT_TYPE_FMT_6)    \
+    REGISTER_CUSTOM_TYPE_7(_fn, SPF_CUSTOM_PRINT_TYPE_7, SPF_CUSTOM_PRINT_TYPE_FMT_7)    \
+    REGISTER_CUSTOM_TYPE_8(_fn, SPF_CUSTOM_PRINT_TYPE_8, SPF_CUSTOM_PRINT_TYPE_FMT_8)    \
+    REGISTER_CUSTOM_TYPE_9(_fn, SPF_CUSTOM_PRINT_TYPE_9, SPF_CUSTOM_PRINT_TYPE_FMT_9)    \
     REGISTER_CUSTOM_TYPE_10(_fn, SPF_CUSTOM_PRINT_TYPE_10, SPF_CUSTOM_PRINT_TYPE_FMT_10) \
     REGISTER_CUSTOM_TYPE_11(_fn, SPF_CUSTOM_PRINT_TYPE_11, SPF_CUSTOM_PRINT_TYPE_FMT_11) \
     REGISTER_CUSTOM_TYPE_12(_fn, SPF_CUSTOM_PRINT_TYPE_12, SPF_CUSTOM_PRINT_TYPE_FMT_12) \
@@ -1532,7 +1548,7 @@ static float mat4_trace(Mat4 m)
     REGISTER_CUSTOM_TYPE_16(_fn, SPF_CUSTOM_PRINT_TYPE_16, SPF_CUSTOM_PRINT_TYPE_FMT_16) \
     _fn(PTR,                 default,                         "", ...)
 
-#define __ITER_TYPES_PROMOTED(_fn, ...)                                                                   \
+#define __ITER_TYPES_PROMOTED(_fn, ...)                                                                  \
     _fn(BOOL,                      int,                 "u",                                 ...)__COMMA \
     _fn(FLOAT,                     double,              "f",                                 ...)__COMMA \
     _fn(DOUBLE,                    double,              "f",                                 ...)__COMMA \
@@ -1844,12 +1860,12 @@ static void __sprint(char* buff, size_t buff_sz, const char* fmt, size_t arg_cou
         {
             __ArgType type = arg_types[current_arg_type];
 
-            #define __TYPE_CASE(_up, _lw, _fmt, ...) \
-                case __ARG_TYPE_##_up: { \
-                    if (buff_pos >= buff_sz - 1) goto end; \
+            #define __TYPE_CASE(_up, _lw, _fmt, ...)                                                     \
+                case __ARG_TYPE_##_up: {                                                                 \
+                    if (buff_pos >= buff_sz - 1) goto end;                                               \
                     int n = snprintf(buff + buff_pos, (buff_sz - buff_pos), "%"_fmt, va_arg(list, _lw)); \
-                    buff_pos += n; \
-                    break; \
+                    buff_pos += n;                                                                       \
+                    break;                                                                               \
                 }
 
             #undef __COMMA
@@ -2072,13 +2088,16 @@ static void __spf_log(__SPF_Level lvl, const char* msg, ...)
 #if defined(OS_WINDOWS)
 #   include <windows.h>
 #   include <Lmcons.h>       // UNLEN
+#   include <stdio.h>        // remove, fopen, fclose
 #elif defined(OS_POSIX)
 #   include <sys/types.h>    // uid_t
 #   include <sys/stat.h>     // stat
 #   include <sys/statvfs.h>  // statvfs
 #   include <unistd.h>       // rmdir, geteuid
-#   include <stdlib.h>       // getenv
 #   include <pwd.h>          // geteuid, getpwuid
+#   include <stdlib.h>       // getenv
+#   include <stdio.h>        // remove, fopen, fclose
+#   include <time.h>         // time_t
 #endif
 
 static bool make_dir(const char* path)
@@ -2097,15 +2116,23 @@ static bool make_dir(const char* path)
 #endif
 }
 
-// TODO: allow deletion of non empty directories
 static bool delete_dir(const char* path)
 {
 #if defined(OS_WINDOWS)
     return RemoveDirectoryA(path);
 #elif defined(OS_POSIX)
-    int r = rmdir(path);
-    if (r == 0) return true;
-    return false;
+    return rmdir(path) == 0;
+#endif
+}
+
+static bool dir_exists(const char* path)
+{
+#if defined(OS_WINDOWS)
+    DWORD attr = GetFileAttributes(path);
+    return (attr != INVALID_FILE_ATTRIBUTES &&
+           (attr & FILE_ATTRIBUTE_DIRECTORY));
+#elif defined(OS_POSIX)
+    return access(path, F_OK) == 0;
 #endif
 }
 
@@ -2116,11 +2143,73 @@ static const char* temp_dir()
     GetTempPathA(256, path);
     return path;
 #elif defined(OS_POSIX)
-
-    // TOOD: potentally find a better way of doing this
+    // TODO: potentally find a better way of doing this
     const char* dir = getenv("TMPDIR");
     if (dir != nullptr) return dir;
     return "/tmp";
+#endif
+}
+
+static bool file_exists(const char* path)
+{
+#if defined(OS_WINDOWS)
+    // return PathFileExistsA(path);
+    DWORD attr = GetFileAttributes(path);
+    return (attr != INVALID_FILE_ATTRIBUTES &&
+          !(attr & FILE_ATTRIBUTE_DIRECTORY));
+#elif defined(OS_POSIX)
+    return access(path, F_OK) == 0;
+#endif
+}
+
+static bool create_file(const char* path, bool override_existing)
+{
+    if (!override_existing && file_exists(path)) return false;
+
+    FILE* f = fopen(path, "w");
+
+    if (f != nullptr) {
+        fclose(f);
+        return true;
+    }
+
+    fclose(f);
+    return false;
+}
+
+static bool delete_file(const char* path)
+{
+#if defined(OS_WINDOWS)
+    return DeleteFileA(path);
+#elif defined(OS_POSIX)
+    return remove(path) == 0;
+#endif
+}
+
+static size_t file_time(const char* path)
+{
+#if defined(OS_WINDOWS)
+    WIN32_FIND_DATAA data;
+    HANDLE h = FindFirstFileA(path, &data);
+
+    if (h == INVALID_HANDLE_VALUE) return 0;
+
+    size_t UNIX_TIME_START = 0x019DB1DED53E8000;
+    size_t TICKS_PER_SECOND = 10000000;
+
+    FILETIME ft = data.ftLastWriteTime;
+
+    LARGE_INTEGER li;
+    li.LowPart  = ft.dwLowDateTime;
+    li.HighPart = ft.dwHighDateTime;
+
+    FindClose(&h);
+
+    return (li.QuadPart - UNIX_TIME_START) / TICKS_PER_SECOND;
+#elif defined(OS_POSIX)
+    struct stat attr;
+    int r = stat(path, &attr);
+    return r == 0 ? (size_t)attr.st_mtime : 0;
 #endif
 }
 
@@ -2155,6 +2244,7 @@ static size_t disk_free_space()
 #if defined(SPFLIB_MEMORY)
 
 // rpmalloc start
+#if !defined(BUILD_DEBUG)
 /* rpmalloc.c  -  Memory allocator  -  2016-2020 Mattias Jansson
  *
  * SPDX-FileCopyrightText: 2016-2020 Mattias Jansson
@@ -5767,19 +5857,21 @@ rpmalloc_get_heap_for_ptr(void* ptr) {
 #ifdef __cplusplus
 }
 #endif
+
+#endif // !defined(BUILD_DEBUG)
 // rpmalloc end
 
-#if defined(BUILD_DEBUG) 
+#if defined(BUILD_DEBUG)
 #   include <stdlib.h>   // malloc, calloc, realloc, free
 #endif
 
-// NOTE: 
+// NOTE:
 // we still use regular malloc, free etc in debug mode
 // to make ASAN and potentially other memory debugging tools still work correctly
 
 static void* mem_alloc(size_t sz)
 {
-#if defined(BUILD_DEBUG) 
+#if defined(BUILD_DEBUG)
     return malloc(sz);
 #else
     return rpmalloc(sz);
@@ -5788,7 +5880,7 @@ static void* mem_alloc(size_t sz)
 
 static void* mem_calloc(size_t num, size_t sz)
 {
-#if defined(BUILD_DEBUG) 
+#if defined(BUILD_DEBUG)
     return calloc(num, sz);
 #else
     return rpcalloc(num, sz);
@@ -5797,7 +5889,7 @@ static void* mem_calloc(size_t num, size_t sz)
 
 static void* mem_realloc(void* ptr, size_t num)
 {
-#if defined(BUILD_DEBUG) 
+#if defined(BUILD_DEBUG)
     return realloc(ptr, num);
 #else
     return rprealloc(ptr, num);
@@ -5806,12 +5898,14 @@ static void* mem_realloc(void* ptr, size_t num)
 
 static void mem_free(void* ptr)
 {
-#if defined(BUILD_DEBUG) 
+#if defined(BUILD_DEBUG)
     return free(ptr);
 #else
     return rpfree(ptr);
 #endif
 }
+
+// TODO: add mem_set, mem_copy etc
 
 #endif // defined(SPFLIB_MEMORY)
 
@@ -5833,15 +5927,22 @@ typedef struct
 
 static BumpAllocator bump_new(size_t capacity)
 {
-    return (BumpAllocator){
+    BumpAllocator ac;
+
 #if defined(SPFLIB_MEMORY)
-        .data      = malloc(capacity),
+    ac.data = mem_alloc(capacity);
 #else
-        .data      = mem_alloc(capacity),
+    ac.data = malloc(capacity);
 #endif
-        .capacity  = capacity,
-        .pos_bytes = 0
-    };
+
+#if defined(SPF_WILL_ASSERT)
+    SPF_ASSERT(ac.data != nullptr, "Bump allocator failed to allocate memory.");
+#endif
+
+    ac.capacity  = capacity;
+    ac.pos_bytes = 0;
+
+    return ac;
 }
 
 static void* bump_alloc(BumpAllocator* ac, size_t size)
@@ -5887,22 +5988,22 @@ static void bump_delete(BumpAllocator* ac)
 
 typedef struct
 {
-   u8 r, g, b, a; 
+   u8 r, g, b, a;
 } Color4;
 
 #define COLOR4_TO_GL(_c) _c.r / 255.f, _c.g / 255.f, _c.b / 255.f, _c.a / 255.f
 
 #define __Color4_Make(...) (Color4){ __VA_ARGS__ }
 #define __Color4_Args(_1, _2, _3, _4, x, ...) x
-#define Color4(...) __Color4_Args(__VA_ARGS__, \
-                            __Color4_Make(__VA_ARGS__), \
-                            __Color4_Make(__VA_ARGS__, 255), \
+#define Color4(...) __Color4_Args(__VA_ARGS__,                    \
+                            __Color4_Make(__VA_ARGS__),           \
+                            __Color4_Make(__VA_ARGS__, 255),      \
                             __Color4_Make(__VA_ARGS__, 255, 255), \
                             __Color4_Make(__VA_ARGS__, __VA_ARGS__, __VA_ARGS__, 255))
 
 static Color4 color_from_hex(u32 hex)
 {
-    Color4 c = {0};
+    Color4 c;
 
     c.r = (hex >> 24) & 0xFF;
     c.g = (hex >> 16) & 0xFF;
@@ -5928,6 +6029,322 @@ static u32 color_to_hex(Color4 c)
 // RGFW end
 
 #endif // defined(SPFLIB_FRAMEWORK)
+
+#if defined(SPFLIB_META)
+
+#include <string.h>    // strcmp
+
+#define __N_VA_ARGS64_(_64,_63,_62,_61,_60,_59,_58,_57,_56,_55,_54,_53,_52,_51,_50,_49,_48,_47,_46,_45,_44,_43,_42,_41,_40,_39,_38,_37,_36,_35,_34,_33,_32,_31,_30,_29,_28,_27,_26,_25,_24,_23,_22,_21,_20,_19,_18,_17,_16,_15,_14,_13,_12,_11,_10,_9,_8,_7,_6,_5,_4,_3,_2,_1, N, ...) N
+#define __N_VA_ARGS64(...) __N_VA_ARGS64_(__VA_ARGS__ __VA_OPT__(,) 64,63,62,61,60,59,58,57,56,55,54,53,52,51,50,49,48,47,46,45,44,43,42,41,40,39,38,37,36,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0)
+
+#define __FOREACH1_0(FN, ARG, ...)
+#define __FOREACH1_1(FN, ARG, E, ...)  FN(E, ARG)
+#define __FOREACH1_2(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_1(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_3(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_2(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_4(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_3(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_5(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_4(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_6(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_5(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_7(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_6(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_8(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_7(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_9(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_8(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_10(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_9(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_11(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_10(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_12(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_11(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_13(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_12(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_14(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_13(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_15(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_14(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_16(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_15(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_17(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_16(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_18(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_17(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_19(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_18(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_20(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_19(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_21(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_20(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_22(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_21(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_23(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_22(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_24(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_23(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_25(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_24(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_26(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_25(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_27(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_26(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_28(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_27(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_29(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_28(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_30(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_29(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_31(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_30(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_32(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_31(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_33(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_32(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_34(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_33(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_35(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_34(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_36(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_35(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_37(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_36(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_38(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_37(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_39(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_38(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_40(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_39(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_41(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_40(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_42(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_41(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_43(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_42(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_44(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_43(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_45(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_44(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_46(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_45(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_47(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_46(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_48(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_47(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_49(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_48(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_50(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_49(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_51(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_50(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_52(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_51(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_53(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_52(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_54(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_53(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_55(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_54(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_56(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_55(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_57(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_56(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_58(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_57(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_59(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_58(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_60(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_59(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_61(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_60(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_62(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_61(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_63(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_62(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_64(FN, ARG, E, ...)  FN(E, ARG) __FOREACH1_63(FN, ARG, __VA_ARGS__)
+
+#define __FOREACH1__(FN, ARG, NARGS, ...) __FOREACH1_##NARGS(FN, ARG, __VA_ARGS__)
+#define __FOREACH1_(FN, ARG, NARGS, ...) __FOREACH1__(FN, ARG, NARGS, __VA_ARGS__)
+#define __FOREACH1(FN, ARG, ...) __FOREACH1_(FN, ARG, __N_VA_ARGS64(__VA_ARGS__), __VA_ARGS__)
+
+
+#define __FOREACH2_0(FN, ARG, ARG2, ...)
+#define __FOREACH2_1(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2)
+#define __FOREACH2_2(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_1(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_3(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_2(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_4(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_3(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_5(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_4(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_6(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_5(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_7(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_6(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_8(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_7(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_9(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_8(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_10(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_9(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_11(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_10(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_12(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_11(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_13(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_12(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_14(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_13(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_15(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_14(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_16(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_15(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_17(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_16(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_18(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_17(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_19(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_18(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_20(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_19(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_21(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_20(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_22(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_21(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_23(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_22(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_24(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_23(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_25(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_24(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_26(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_25(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_27(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_26(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_28(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_27(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_29(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_28(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_30(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_29(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_31(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_30(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_32(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_31(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_33(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_32(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_34(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_33(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_35(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_34(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_36(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_35(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_37(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_36(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_38(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_37(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_39(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_38(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_40(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_39(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_41(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_40(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_42(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_41(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_43(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_42(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_44(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_43(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_45(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_44(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_46(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_45(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_47(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_46(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_48(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_47(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_49(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_48(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_50(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_49(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_51(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_50(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_52(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_51(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_53(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_52(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_54(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_53(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_55(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_54(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_56(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_55(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_57(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_56(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_58(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_57(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_59(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_58(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_60(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_59(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_61(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_60(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_62(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_61(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_63(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_62(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_64(FN, ARG, ARG2, E, ...)  FN(E, ARG, ARG2) __FOREACH2_63(FN, ARG, ARG2, __VA_ARGS__)
+
+#define __FOREACH2__(FN, ARG, ARG2, NARGS, ...) __FOREACH2_##NARGS(FN, ARG, ARG2, __VA_ARGS__)
+#define __FOREACH2_(FN, ARG, ARG2, NARGS, ...) __FOREACH2__(FN, ARG, ARG2, NARGS, __VA_ARGS__)
+#define __FOREACH2(FN, ARG, ARG2, ...) __FOREACH2_(FN, ARG, ARG2, __N_VA_ARGS64(__VA_ARGS__), __VA_ARGS__)
+
+typedef enum
+{
+    FIELD_TYPE_OTHER,
+    FIELD_TYPE_INTEGRAL,
+    FIELD_TYPE_FLOATING,
+    FIELD_TYPE_STRUCT,
+    FIELD_TYPE_ARRAY,
+    FIELD_TYPE_ARRAY_PTR,
+    FIELD_TYPE_PTR,
+    FIELD_TYPE_PTR_2,
+    FIELD_TYPE_PTR_3,
+    FIELD_TYPE_PTR_4,
+    FIELD_TYPE_PTR_5,
+    FIELD_TYPE_COUNT
+} FieldType;
+
+typedef struct
+{
+    struct {
+        FieldType index;
+        const char* name;
+    } type;
+
+    const char* name;
+
+    size_t size;
+    size_t offset;
+    size_t arr_size;
+
+    bool is_signed;
+} FieldInfo;
+
+typedef struct
+{
+    const char* name;
+    FieldInfo fields[64];
+    size_t field_count;
+} TypeInfo;
+
+#define __EMPTY()
+#define __EXPAND(...) __VA_ARGS__
+
+#define __COMBINE_TWO_(a, b) b a
+#define __COMBINE_TWO(a, b) __COMBINE_TWO_(a, b)
+
+#define __CONCAT_(a, b) a ## b
+#define __CONCAT(a, b) __CONCAT_(a, b)
+
+#define __OPEN_BRACKET (
+#define __CLOSED_BRACKET )
+
+#define __ARG_TO_TWO_ARGS(_type, _name, ...) _type, _name __VA_OPT__(, __VA_ARGS__)
+
+#define __COMBINE_THREE_(a, b, c) __EXPAND(b __OPEN_BRACKET c, __ARG_TO_TWO_ARGS a __CLOSED_BRACKET)
+#define __COMBINE_THREE(a, b, c) __COMBINE_THREE_(a, b, c)
+
+#define __GET_FIELD_MOD_PTR   *
+#define __GET_FIELD_MOD_PTR_2 **
+#define __GET_FIELD_MOD_PTR_3 ***
+#define __GET_FIELD_MOD_PTR_4 ****
+#define __GET_FIELD_MOD_PTR_5 *****
+
+#define __GET_FIELD_MOD_ARRAY(x) [x]
+// #define __GET_FIELD_MOD_ARRAY_PTR(x) ptr [x]
+
+#define __GET_FIELD_MOD_INTEGRAL
+#define __GET_FIELD_MOD_FLOATING
+#define __GET_FIELD_MOD_STRUCT
+#define __GET_FIELD_MOD_OTHER
+
+#define __CHECK_PARAM_TO_FIELD_MOD(...) __GET_FIELD_MOD_ ## __VA_ARGS__
+
+#define __FIELD_ARRAY(_type, _name, _n) _type _name[_n]
+#define __FIELD_ARRAY_PTR(_type, _name, _n) _type* _name[_n]
+
+#define __CAT_AND_CALL(_type, _name, _1, _2) __FIELD_ ## _1 (_type, _name, _2)
+
+#define __SPLIT_ARGS_TO_FIELD_(_1, _2, x, ...) x
+#define __SPLIT_ARGS_TO_FIELD(_type, _name, ...)                               \
+  __SPLIT_ARGS_TO_FIELD_(__VA_ARGS__,                                          \
+                         __CAT_AND_CALL(_type, _name, __VA_ARGS__),            \
+                         _type __CHECK_PARAM_TO_FIELD_MOD(__VA_ARGS__) _name)
+
+#define __IS_ARRAY(_type, _, _n) sizeof(_type) * _n
+#define __IS_ARRAY_PTR(_type, _, _n) sizeof(_type) * _n
+
+#define __EMPTY_1(_) 0
+#define __COMBINE_IS_ARR(_type, _arr, _n) __IS_ ## _arr (_type, _arr, _n)
+
+
+#define __CAT_FIELD_ENUM_VAL_0 FIELD_TYPE_OTHER
+#define __CAT_FIELD_ENUM_VAL_1(_f) FIELD_TYPE_ ## _f
+#define __CAT_FIELD_ENUM_VAL_2(_f, _s) FIELD_TYPE_ ## _f
+
+#define __CAT_FIELD_ENUM_VAL(...) __CONCAT(__CAT_FIELD_ENUM_VAL_, __N_VA_ARGS64(__VA_ARGS__)) __VA_OPT__((__VA_ARGS__))
+
+
+#define __CAT_FIELD_ENUM_VAL_UD_0 __FIELD_TYPE_OTHER
+#define __CAT_FIELD_ENUM_VAL_UD_1(_f) __FIELD_TYPE_ ## _f
+#define __CAT_FIELD_ENUM_VAL_UD_2(_f, _s) __FIELD_TYPE_ ## _f
+
+#define __CAT_FIELD_ENUM_VAL_UD(...) __CONCAT(__CAT_FIELD_ENUM_VAL_UD_, __N_VA_ARGS64(__VA_ARGS__)) __VA_OPT__((__VA_ARGS__))
+
+
+#define __OPT_ARG_AT(_1, _2, x, ...) x
+#define __OPT_ARG(_type, ...)                                                    \
+  __OPT_ARG_AT(__VA_ARGS__, __COMBINE_IS_ARR __VA_OPT__((_type, __VA_ARGS__)),   \
+             __CONCAT(__EMPTY_, __N_VA_ARGS64(__VA_ARGS__))                        \
+                 __VA_OPT__((__VA_ARGS__)))
+
+#define __FIELD_TYPE_OTHER_SIGNED(_type)                   0
+#define __FIELD_TYPE_INTEGRAL_SIGNED(_type) (((_type)-1) < 0)
+#define __FIELD_TYPE_FLOATING_SIGNED(_type)                0
+#define __FIELD_TYPE_STRUCT_SIGNED(_type)                  0
+#define __FIELD_TYPE_ARRAY_SIGNED(_type)                   0
+#define __FIELD_TYPE_ARRAY_PTR_SIGNED(_type)               0
+#define __FIELD_TYPE_PTR_SIGNED(_type)                     0
+#define __FIELD_TYPE_PTR_2_SIGNED(_type)                   0
+#define __FIELD_TYPE_PTR_3_SIGNED(_type)                   0
+#define __FIELD_TYPE_PTR_4_SIGNED(_type)                   0
+#define __FIELD_TYPE_PTR_5_SIGNED(_type)                   0
+
+#define __FIELD_TO_FIELD_INFO(_struct, _type, _name, ...) \
+    { \
+        .type      = { .index = __CAT_FIELD_ENUM_VAL(__VA_ARGS__), .name = #_type }, \
+        .name      = #_name, \
+        .size      = sizeof(_type), \
+        .offset    = offsetof(_struct, _name), \
+        .arr_size  = __OPT_ARG(_type, __VA_ARGS__), \
+        .is_signed = __CONCAT(__CAT_FIELD_ENUM_VAL_UD(__VA_ARGS__), _SIGNED) (_type), \
+    },
+
+#define __SPLIT_ARGS__NO(_type, _name) _type _name;
+#define __SPLIT_ARGS_VA_NO(_type, _name, ...) __SPLIT_ARGS_TO_FIELD(_type, _name, __VA_ARGS__);
+
+#define __ARG_TO_FIELD(_type, _name, ...)                                        \
+  __SPLIT_ARGS_ ## __VA_OPT__(VA) ## _NO(_type, _name __VA_OPT__(, __VA_ARGS__))
+
+#define STRUCT(_name, ...) \
+    typedef struct \
+    { \
+        __FOREACH1(__COMBINE_TWO, __ARG_TO_FIELD, __VA_ARGS__) \
+    } _name; \
+    TypeInfo __type_info_##_name = \
+    { \
+        .name = #_name, \
+        .fields = { \
+            __FOREACH2(__COMBINE_THREE, __FIELD_TO_FIELD_INFO, _name, __VA_ARGS__) \
+        }, \
+        .field_count = __N_VA_ARGS64(__VA_ARGS__) \
+    };
+
+#define type_info(_s)   __type_info_##_s
+
+#define field_value_of(_struct, _field_type, _field)   *(_field_type*)((u8*)&_struct + _field->offset)
+#define field_ptr_value_of(_struct, _field_type, _field)   (_field_type*)((u8*)&_struct + _field->offset)
+
+#define field_arr_value_of(_struct, _field_type, _field, _index)  *((_field_type*)((u8*)&_struct + _field->offset) + _index)
+#define field_arr_size(_field)   ((_field->arr_size) / _field->size)
+
+#define field_is_arr(_field) (_field->arr_size != 0)
+#define field_is(_field, _name) (strcmp(_field->type.name, #_name) == 0 && sizeof(_name) == _field->size)
+
+// TODO:
+// - clean up the code
+
+#endif // defined(SPFLIB_META) 
 
 #if defined(__GNUC__)
 #   pragma GCC diagnostic pop
