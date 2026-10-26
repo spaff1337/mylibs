@@ -41,11 +41,11 @@
 #   define OS_WINDOWS
 #   define WIN32_LEAN_AND_MEAN
 #   if defined(_WIN64)
-#       define OS_WINDOWS_x64
+#       define OS_WINDOWS_64
 #   elif !defined(_WIN64) && defined(_WIN32)
-#       define OS_WINDOWS_x32
+#       define OS_WINDOWS_32
 #   elif !defined(_WIN64) && !defined(_WIN32) && defined(_WIN16)
-#       define OS_WINDOWS_x16
+#       define OS_WINDOWS_16
 #   else
 #       error "Unknown Windows version."
 #   endif
@@ -122,6 +122,8 @@
 #	define COMPILER_MSVC
 #elif defined(__TINYC__)
 #	define COMPILER_TCC
+#elif defined(__chibicc__)
+#	define COMPILER_CHIBI
 #else
 #   pragma message("Unkown C compiler.")
 #endif
@@ -165,6 +167,30 @@
 
 #define UNUSED(u) (void)u
 #define cast(t) (t)
+#define fallthrough
+
+#if 0
+
+#if STDC_VER < 11
+#   if defined(COMPILER_GCC) || defined(COMPILER_CLANG)
+#       define unreachable() (__builtin_unreachable())
+#   elif defined(COMPILER_MSVC)
+#       define unreachable() (__assume(0))
+#   else
+#       define unreachable()
+#   endif
+#elif STDC_VER >= 11 && STDC_VER < 23
+#   define unreachable() (unreachable_impl())
+#   if defined(SPFLIB_IMPL)
+        _Noreturn inline void unreachable_impl() { abort(); }
+#   else // defined(SPFLIB_IMPL)
+        _Noreturn inline void unreachable_impl();
+#   endif
+#elif STDC_VER >= 23
+#   // stddef header includes unreachable
+#endif
+
+#endif
 
 #if STDC_VER >= 11 && STDC_VER < 23
 #   if !defined(static_assert)
@@ -191,16 +217,12 @@
 
 #define countof(_arr) (sizeof(_arr) / sizeof(_arr[0]))
 
-#if 0
-
-#define __fori4(_type, _i, _from, _to) for (_type (_i) = (_from); (_i) < (_to); (_i)++)
+#define __fori4(_type, _i, _from, _to) for (_type (_i) = (_from); (_i) _to; (_i)++)
 #define __forir4(_type, _i, _from, _to) for (_type (_i) = (_to); (_i)-- > (_from);)
 
 #define __fori_args(_1, _2, _3, _4, x, ...) x
-#define fori(...) __fori_args(__VA_ARGS__, __fori4(__VA_ARGS__), __fori4(s64, __VA_ARGS__), __fori4(s64, i, __VA_ARGS__), "Invalid arguments should be fori (type (optional), i (optional), from, to)")
-#define fori_r(...) __fori_args(__VA_ARGS__, __forir4(__VA_ARGS__), __forir4(s64, __VA_ARGS__), __forir4(s64, i, __VA_ARGS__), "Invalid arguments should be fori_r (type (optional), i (optional), from, to)")
-
-#endif
+#define fori(...) __fori_args(__VA_ARGS__, __fori4(__VA_ARGS__), __fori4(s64, __VA_ARGS__), __fori4(s64, i, __VA_ARGS__), "Invalid arguments should be fori (type (optional), i (optional), from, (< | <=) to)")
+#define fori_rev(...) __fori_args(__VA_ARGS__, __forir4(__VA_ARGS__), __forir4(s64, __VA_ARGS__), __forir4(s64, i, __VA_ARGS__), "Invalid arguments should be fori_r (type (optional), i (optional), from, to)")
 
 typedef uint8_t  u8;
 typedef int8_t   s8;
@@ -219,19 +241,23 @@ typedef double   f64;
 
 #include <limits.h>
 
-// #if SIZE_MAX == ULLONG_MAX
-//     typedef signed long long ssize_t;
-// #elif SIZE_MAX == ULONG_MAX
-//     typedef signed long int  ssize_t;
-// #elif SIZE_MAX == UINT_MAX
-//     typedef signed int       ssize_t;
-// #elif SIZE_MAX == USHRT_MAX
-//     typedef signed short     ssize_t;
-// #elif SIZE_MAX == UCHAR_MAX
-//     typedef signed char      ssize_t;
-// #else
-//     #error "Unspecified underlying size_t type"
-// #endif
+#if 0
+
+#if SIZE_MAX == ULLONG_MAX
+    typedef signed long long ssize_t;
+#elif SIZE_MAX == ULONG_MAX
+    typedef signed long int  ssize_t;
+#elif SIZE_MAX == UINT_MAX
+    typedef signed int       ssize_t;
+#elif SIZE_MAX == USHRT_MAX
+    typedef signed short     ssize_t;
+#elif SIZE_MAX == UCHAR_MAX
+    typedef signed char      ssize_t;
+#else
+    #error "Unspecified underlying size_t type"
+#endif
+
+#endif
 
 // TODO: add nan and inf checks
 
@@ -249,11 +275,25 @@ typedef double   f64;
 
 // --- macro utils --- //
 
+// TODO: add INC and DEC macros
+
 #define SPF_PAIR_AT_1(_1, _2) _1
 #define SPF_PAIR_AT_2(_1, _2) _2
 
 #define SPF_CHECK_AT_1(_1, _2, ...) _2
 #define SPF_CHECK(...) SPF_CHECK_AT_1(__VA_ARGS__,)
+
+#define SPF_EMPTY()
+
+#define SPF_REMOVE_PARENS(...) __VA_ARGS__
+
+#define SPF_EXPAND(...) __VA_ARGS__
+// #define SPF_EXPAND(...) SPF_EXPAND_(__VA_ARGS__)
+
+#define SPF_EXPAND_NO_PARENS(...) SPF_EXPAND __VA_ARGS__
+
+#define SPF_CONCAT_(a, b) a ## b
+#define SPF_CONCAT(a, b) SPF_CONCAT_(a, b)
 
 // https://gustedt.wordpress.com/2010/06/08/detect-empty-macro-arguments/
 #define __SPF_ARG16(_0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, ...) _15
@@ -281,14 +321,7 @@ __SPF_ISEMPTY_(                                                               \
 #define __SPF_IS_EMPTY_CASE_0001 ,
  
 
-#define SPF_EXPAND(...) __VA_ARGS__
-// #define SPF_EXPAND(...) SPF_EXPAND_(__VA_ARGS__)
-
-#define SPF_EXPAND_NO_PARENS(...) SPF_EXPAND __VA_ARGS__
-
-#define SPF_CONCAT_(a, b) a ## b
-#define SPF_CONCAT(a, b) SPF_CONCAT_(a, b)
-
+// vaopt
 #define __SPF_EXPAND_NON_EMPTY_0(...) __VA_ARGS__
 #define __SPF_EXPAND_NON_EMPTY_1(...)
 
@@ -300,6 +333,9 @@ __SPF_ISEMPTY_(                                                               \
 
 #define VA_NOPT_(_e, ...) SPF_CONCAT(__SPF_EXPAND_EMPTY_, __SPF_ISEMPTY(__VA_ARGS__)) (_e)
 #define VA_NOPT(_e, ...) VA_NOPT_(SPF_EXPAND_NO_PARENS(_e), __VA_ARGS__)
+
+#define VA_OPT_IF_ELSE(_if, _else, ...) VA_OPT((_if), __VA_ARGS__) VA_NOPT((_else), __VA_ARGS__)
+//
 
 #define VA_COUNT_(_64, _63, _62, _61, _60, _59, _58, _57, _56, _55, _54, _53,  \
                    _52, _51, _50, _49, _48, _47, _46, _45, _44, _43, _42, _41, \
@@ -327,138 +363,35 @@ __SPF_ISEMPTY_(                                                               \
               13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
 
 // foreach
-#define SPF_FOREACH_REV_1(_fn, _f, ...) _fn(_f)
-#define SPF_FOREACH_REV_2(_fn, _f, ...) SPF_FOREACH_REV_1(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_3(_fn, _f, ...) SPF_FOREACH_REV_2(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_4(_fn, _f, ...) SPF_FOREACH_REV_3(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_5(_fn, _f, ...) SPF_FOREACH_REV_4(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_6(_fn, _f, ...) SPF_FOREACH_REV_5(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_7(_fn, _f, ...) SPF_FOREACH_REV_6(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_8(_fn, _f, ...) SPF_FOREACH_REV_7(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_9(_fn, _f, ...) SPF_FOREACH_REV_8(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_10(_fn, _f, ...) SPF_FOREACH_REV_9(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_11(_fn, _f, ...) SPF_FOREACH_REV_10(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_12(_fn, _f, ...) SPF_FOREACH_REV_11(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_13(_fn, _f, ...) SPF_FOREACH_REV_12(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_14(_fn, _f, ...) SPF_FOREACH_REV_13(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_15(_fn, _f, ...) SPF_FOREACH_REV_14(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_16(_fn, _f, ...) SPF_FOREACH_REV_15(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_17(_fn, _f, ...) SPF_FOREACH_REV_16(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_18(_fn, _f, ...) SPF_FOREACH_REV_17(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_19(_fn, _f, ...) SPF_FOREACH_REV_18(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_20(_fn, _f, ...) SPF_FOREACH_REV_19(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_21(_fn, _f, ...) SPF_FOREACH_REV_20(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_22(_fn, _f, ...) SPF_FOREACH_REV_21(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_23(_fn, _f, ...) SPF_FOREACH_REV_22(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_24(_fn, _f, ...) SPF_FOREACH_REV_23(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_25(_fn, _f, ...) SPF_FOREACH_REV_24(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_26(_fn, _f, ...) SPF_FOREACH_REV_25(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_27(_fn, _f, ...) SPF_FOREACH_REV_26(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_28(_fn, _f, ...) SPF_FOREACH_REV_27(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_29(_fn, _f, ...) SPF_FOREACH_REV_28(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_30(_fn, _f, ...) SPF_FOREACH_REV_29(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_31(_fn, _f, ...) SPF_FOREACH_REV_30(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_32(_fn, _f, ...) SPF_FOREACH_REV_31(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_33(_fn, _f, ...) SPF_FOREACH_REV_32(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_34(_fn, _f, ...) SPF_FOREACH_REV_33(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_35(_fn, _f, ...) SPF_FOREACH_REV_34(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_36(_fn, _f, ...) SPF_FOREACH_REV_35(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_37(_fn, _f, ...) SPF_FOREACH_REV_36(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_38(_fn, _f, ...) SPF_FOREACH_REV_37(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_39(_fn, _f, ...) SPF_FOREACH_REV_38(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_40(_fn, _f, ...) SPF_FOREACH_REV_39(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_41(_fn, _f, ...) SPF_FOREACH_REV_40(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_42(_fn, _f, ...) SPF_FOREACH_REV_41(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_43(_fn, _f, ...) SPF_FOREACH_REV_42(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_44(_fn, _f, ...) SPF_FOREACH_REV_43(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_45(_fn, _f, ...) SPF_FOREACH_REV_44(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_46(_fn, _f, ...) SPF_FOREACH_REV_45(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_47(_fn, _f, ...) SPF_FOREACH_REV_46(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_48(_fn, _f, ...) SPF_FOREACH_REV_47(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_49(_fn, _f, ...) SPF_FOREACH_REV_48(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_50(_fn, _f, ...) SPF_FOREACH_REV_49(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_51(_fn, _f, ...) SPF_FOREACH_REV_50(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_52(_fn, _f, ...) SPF_FOREACH_REV_51(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_53(_fn, _f, ...) SPF_FOREACH_REV_52(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_54(_fn, _f, ...) SPF_FOREACH_REV_53(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_55(_fn, _f, ...) SPF_FOREACH_REV_54(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_56(_fn, _f, ...) SPF_FOREACH_REV_55(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_57(_fn, _f, ...) SPF_FOREACH_REV_56(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_58(_fn, _f, ...) SPF_FOREACH_REV_57(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_59(_fn, _f, ...) SPF_FOREACH_REV_58(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_60(_fn, _f, ...) SPF_FOREACH_REV_59(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_61(_fn, _f, ...) SPF_FOREACH_REV_60(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_62(_fn, _f, ...) SPF_FOREACH_REV_61(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_63(_fn, _f, ...) SPF_FOREACH_REV_62(_fn, __VA_ARGS__) _fn(_f)
-#define SPF_FOREACH_REV_64(_fn, _f, ...) SPF_FOREACH_REV_63(_fn, __VA_ARGS__) _fn(_f)
+#define EVAL2(...) __VA_ARGS__
+#define EVAL1(...) EVAL2(EVAL2(EVAL2(EVAL2(EVAL2(EVAL2(EVAL2(__VA_ARGS__)))))))
+#define EVAL(...)  EVAL1(EVAL1(EVAL1(EVAL1(EVAL1(EVAL1(EVAL1(__VA_ARGS__)))))))
 
-#define SPF_FOREACH_1(_fn, _f, ...) _fn(_f)
-#define SPF_FOREACH_2(_fn, _f, ...) _fn(_f) SPF_FOREACH_1(_fn, __VA_ARGS__) 
-#define SPF_FOREACH_3(_fn, _f, ...) _fn(_f) SPF_FOREACH_2(_fn, __VA_ARGS__) 
-#define SPF_FOREACH_4(_fn, _f, ...) _fn(_f) SPF_FOREACH_3(_fn, __VA_ARGS__)
-#define SPF_FOREACH_5(_fn, _f, ...) _fn(_f) SPF_FOREACH_4(_fn, __VA_ARGS__)
-#define SPF_FOREACH_6(_fn, _f, ...) _fn(_f) SPF_FOREACH_5(_fn, __VA_ARGS__)
-#define SPF_FOREACH_7(_fn, _f, ...) _fn(_f) SPF_FOREACH_6(_fn, __VA_ARGS__)
-#define SPF_FOREACH_8(_fn, _f, ...) _fn(_f) SPF_FOREACH_7(_fn, __VA_ARGS__)
-#define SPF_FOREACH_9(_fn, _f, ...) _fn(_f) SPF_FOREACH_8(_fn, __VA_ARGS__)
-#define SPF_FOREACH_10(_fn, _f, ...) _fn(_f) SPF_FOREACH_9(_fn, __VA_ARGS__)
-#define SPF_FOREACH_11(_fn, _f, ...) _fn(_f) SPF_FOREACH_10(_fn, __VA_ARGS__)
-#define SPF_FOREACH_12(_fn, _f, ...) _fn(_f) SPF_FOREACH_11(_fn, __VA_ARGS__)
-#define SPF_FOREACH_13(_fn, _f, ...) _fn(_f) SPF_FOREACH_12(_fn, __VA_ARGS__)
-#define SPF_FOREACH_14(_fn, _f, ...) _fn(_f) SPF_FOREACH_13(_fn, __VA_ARGS__)
-#define SPF_FOREACH_15(_fn, _f, ...) _fn(_f) SPF_FOREACH_14(_fn, __VA_ARGS__)
-#define SPF_FOREACH_16(_fn, _f, ...) _fn(_f) SPF_FOREACH_15(_fn, __VA_ARGS__)
-#define SPF_FOREACH_17(_fn, _f, ...) _fn(_f) SPF_FOREACH_16(_fn, __VA_ARGS__)
-#define SPF_FOREACH_18(_fn, _f, ...) _fn(_f) SPF_FOREACH_17(_fn, __VA_ARGS__)
-#define SPF_FOREACH_19(_fn, _f, ...) _fn(_f) SPF_FOREACH_18(_fn, __VA_ARGS__)
-#define SPF_FOREACH_20(_fn, _f, ...) _fn(_f) SPF_FOREACH_19(_fn, __VA_ARGS__)
-#define SPF_FOREACH_21(_fn, _f, ...) _fn(_f) SPF_FOREACH_20(_fn, __VA_ARGS__)
-#define SPF_FOREACH_22(_fn, _f, ...) _fn(_f) SPF_FOREACH_21(_fn, __VA_ARGS__)
-#define SPF_FOREACH_23(_fn, _f, ...) _fn(_f) SPF_FOREACH_22(_fn, __VA_ARGS__)
-#define SPF_FOREACH_24(_fn, _f, ...) _fn(_f) SPF_FOREACH_23(_fn, __VA_ARGS__)
-#define SPF_FOREACH_25(_fn, _f, ...) _fn(_f) SPF_FOREACH_24(_fn, __VA_ARGS__)
-#define SPF_FOREACH_26(_fn, _f, ...) _fn(_f) SPF_FOREACH_25(_fn, __VA_ARGS__)
-#define SPF_FOREACH_27(_fn, _f, ...) _fn(_f) SPF_FOREACH_26(_fn, __VA_ARGS__)
-#define SPF_FOREACH_28(_fn, _f, ...) _fn(_f) SPF_FOREACH_27(_fn, __VA_ARGS__)
-#define SPF_FOREACH_29(_fn, _f, ...) _fn(_f) SPF_FOREACH_28(_fn, __VA_ARGS__)
-#define SPF_FOREACH_30(_fn, _f, ...) _fn(_f) SPF_FOREACH_29(_fn, __VA_ARGS__)
-#define SPF_FOREACH_31(_fn, _f, ...) _fn(_f) SPF_FOREACH_30(_fn, __VA_ARGS__)
-#define SPF_FOREACH_32(_fn, _f, ...) _fn(_f) SPF_FOREACH_31(_fn, __VA_ARGS__)
-#define SPF_FOREACH_33(_fn, _f, ...) _fn(_f) SPF_FOREACH_32(_fn, __VA_ARGS__)
-#define SPF_FOREACH_34(_fn, _f, ...) _fn(_f) SPF_FOREACH_33(_fn, __VA_ARGS__)
-#define SPF_FOREACH_35(_fn, _f, ...) _fn(_f) SPF_FOREACH_34(_fn, __VA_ARGS__)
-#define SPF_FOREACH_36(_fn, _f, ...) _fn(_f) SPF_FOREACH_35(_fn, __VA_ARGS__)
-#define SPF_FOREACH_37(_fn, _f, ...) _fn(_f) SPF_FOREACH_36(_fn, __VA_ARGS__)
-#define SPF_FOREACH_38(_fn, _f, ...) _fn(_f) SPF_FOREACH_37(_fn, __VA_ARGS__)
-#define SPF_FOREACH_39(_fn, _f, ...) _fn(_f) SPF_FOREACH_38(_fn, __VA_ARGS__)
-#define SPF_FOREACH_40(_fn, _f, ...) _fn(_f) SPF_FOREACH_39(_fn, __VA_ARGS__)
-#define SPF_FOREACH_41(_fn, _f, ...) _fn(_f) SPF_FOREACH_40(_fn, __VA_ARGS__)
-#define SPF_FOREACH_42(_fn, _f, ...) _fn(_f) SPF_FOREACH_41(_fn, __VA_ARGS__)
-#define SPF_FOREACH_43(_fn, _f, ...) _fn(_f) SPF_FOREACH_42(_fn, __VA_ARGS__)
-#define SPF_FOREACH_44(_fn, _f, ...) _fn(_f) SPF_FOREACH_43(_fn, __VA_ARGS__)
-#define SPF_FOREACH_45(_fn, _f, ...) _fn(_f) SPF_FOREACH_44(_fn, __VA_ARGS__)
-#define SPF_FOREACH_46(_fn, _f, ...) _fn(_f) SPF_FOREACH_45(_fn, __VA_ARGS__)
-#define SPF_FOREACH_47(_fn, _f, ...) _fn(_f) SPF_FOREACH_46(_fn, __VA_ARGS__)
-#define SPF_FOREACH_48(_fn, _f, ...) _fn(_f) SPF_FOREACH_47(_fn, __VA_ARGS__)
-#define SPF_FOREACH_49(_fn, _f, ...) _fn(_f) SPF_FOREACH_48(_fn, __VA_ARGS__)
-#define SPF_FOREACH_50(_fn, _f, ...) _fn(_f) SPF_FOREACH_49(_fn, __VA_ARGS__)
-#define SPF_FOREACH_51(_fn, _f, ...) _fn(_f) SPF_FOREACH_50(_fn, __VA_ARGS__)
-#define SPF_FOREACH_52(_fn, _f, ...) _fn(_f) SPF_FOREACH_51(_fn, __VA_ARGS__)
-#define SPF_FOREACH_53(_fn, _f, ...) _fn(_f) SPF_FOREACH_52(_fn, __VA_ARGS__)
-#define SPF_FOREACH_54(_fn, _f, ...) _fn(_f) SPF_FOREACH_53(_fn, __VA_ARGS__)
-#define SPF_FOREACH_55(_fn, _f, ...) _fn(_f) SPF_FOREACH_54(_fn, __VA_ARGS__)
-#define SPF_FOREACH_56(_fn, _f, ...) _fn(_f) SPF_FOREACH_55(_fn, __VA_ARGS__)
-#define SPF_FOREACH_57(_fn, _f, ...) _fn(_f) SPF_FOREACH_56(_fn, __VA_ARGS__)
-#define SPF_FOREACH_58(_fn, _f, ...) _fn(_f) SPF_FOREACH_57(_fn, __VA_ARGS__)
-#define SPF_FOREACH_59(_fn, _f, ...) _fn(_f) SPF_FOREACH_58(_fn, __VA_ARGS__)
-#define SPF_FOREACH_60(_fn, _f, ...) _fn(_f) SPF_FOREACH_59(_fn, __VA_ARGS__)
-#define SPF_FOREACH_61(_fn, _f, ...) _fn(_f) SPF_FOREACH_60(_fn, __VA_ARGS__)
-#define SPF_FOREACH_62(_fn, _f, ...) _fn(_f) SPF_FOREACH_61(_fn, __VA_ARGS__)
-#define SPF_FOREACH_63(_fn, _f, ...) _fn(_f) SPF_FOREACH_62(_fn, __VA_ARGS__)
-#define SPF_FOREACH_64(_fn, _f, ...) _fn(_f) SPF_FOREACH_63(_fn, __VA_ARGS__)
+#define __SPF_LOOP_IND() __SPF_LOOP
+#define __SPF_LOOP_(f, x, c, ...) SPF_CONCAT(__SPF_LOOP, c) (f, x, __VA_ARGS__)
+#define __SPF_LOOP(f, x, ...) __SPF_LOOP_(f, x, VA_NOPT((0), __VA_ARGS__) VA_OPT((1), __VA_ARGS__), __VA_ARGS__)
+#define __SPF_LOOP1(f, x, ...) f(x) __SPF_LOOP_IND SPF_EMPTY()() (f, __VA_ARGS__)
+#define __SPF_LOOP0(f, x, ...) f(x)
 
-#define SPF_FOREACH(_fn, ...) SPF_CONCAT(SPF_FOREACH_, VA_COUNT(__VA_ARGS__)) (_fn, __VA_ARGS__)
-#define SPF_FOREACH_REVERSE(_fn, ...) SPF_CONCAT(SPF_FOREACH_REV_, VA_COUNT(__VA_ARGS__)) (_fn, __VA_ARGS__)
+#define SPF_FOREACH(_fn, ...) EVAL(__SPF_LOOP(_fn, __VA_ARGS__))
+
+// foreach arg
+#define __SPF_ARG_LOOP_IND() __SPF_ARG_LOOP
+#define __SPF_ARG_LOOP_(f, a, x, c, ...) SPF_CONCAT(__SPF_ARG_LOOP, c) (f, a, x, __VA_ARGS__)
+#define __SPF_ARG_LOOP(f, a, x, ...) __SPF_ARG_LOOP_(f, a, x, VA_NOPT((0), __VA_ARGS__) VA_OPT((1), __VA_ARGS__), __VA_ARGS__)
+#define __SPF_ARG_LOOP1(f, a, x, ...) f(a, x) __SPF_ARG_LOOP_IND SPF_EMPTY()() (f, a, __VA_ARGS__)
+#define __SPF_ARG_LOOP0(f, a, x, ...) f(a, x)
+
+#define SPF_FOREACH_ARG(_fn, _arg, ...) EVAL(__SPF_ARG_LOOP(_fn, _arg, __VA_ARGS__))
+
+// foreach 2 args
+#define __SPF_ARG2_LOOP_IND() __SPF_ARG2_LOOP
+#define __SPF_ARG2_LOOP_(f, a, a2, x, c, ...) SPF_CONCAT(__SPF_ARG2_LOOP, c) (f, a, a2, x, __VA_ARGS__)
+#define __SPF_ARG2_LOOP(f, a, a2, x, ...) __SPF_ARG2_LOOP_(f, a, a2, x, VA_NOPT((0), __VA_ARGS__) VA_OPT((1), __VA_ARGS__), __VA_ARGS__)
+#define __SPF_ARG2_LOOP1(f, a, a2, x, ...) f(a, a2, x) __SPF_ARG2_LOOP_IND SPF_EMPTY()() (f, a, a2, __VA_ARGS__)
+#define __SPF_ARG2_LOOP0(f, a, a2, x, ...) f(a, a2, x)
+
+#define SPF_FOREACH_ARG2(_fn, _arg, _arg2, ...) EVAL(__SPF_ARG2_LOOP(_fn, _arg, _arg2, __VA_ARGS__))
 
 // --- assert --- //
 #if !defined(SPFLIB_NO_ASSERT)
@@ -486,6 +419,174 @@ __SPF_ISEMPTY_(                                                               \
 #   define SPF_ASSERT(_cond)
 #endif // !defined(SPFLIB_NO_ASSERT)
 
+// --- type info --- //
+
+// TODO: make type names their actual type without typedef alias
+
+#if defined(SPFLIB_TYPE_INFO)
+
+#if STDC_VER < 11
+#   error "Type info is not allowed for C versions below C11."
+#endif
+
+/*
+-- settings
+
+#define SPFLIB_TYPE_INFO_DISABLE
+
+*/
+
+/*
+-- example
+
+STRUCT(Player,
+    (s32, health),
+    (float, breath),
+    (s32 inventory, 5),
+    (string, name)
+)
+*/
+
+typedef struct
+{
+    struct {
+        const char* name;
+    } type;
+
+    const char* name;
+
+    size_t size;
+    size_t offset;
+    size_t arr_size;
+
+    bool is_signed;
+    bool is_array;
+    bool is_pointer;
+    bool is_integral;
+    bool is_floating_point;
+    bool is_struct;
+} FieldInfo;
+
+typedef struct
+{
+    const char* name;
+    FieldInfo fields[64];
+    size_t field_count;
+} TypeInfo;
+
+#define IS_SIGNED(_type) _Generic(_type,  \
+    char              : (((char)-1) < 0), \
+    signed char       : 1,                \
+    signed short      : 1,                \
+    signed int        : 1,                \
+    signed long       : 1,                \
+    signed long long  : 1,                \
+    default           : 0                 \
+)
+
+#define IS_UNSIGNED(_type) _Generic(_type,  \
+    _Bool               : 1,                \
+    char                : (((char)-1) < 0), \
+    unsigned char       : 1,                \
+    unsigned short      : 1,                \
+    unsigned int        : 1,                \
+    unsigned long       : 1,                \
+    unsigned long long  : 1,                \
+    default             : 0                 \
+)
+
+#define IS_INTEGRAL(_type) (IS_SIGNED(_type) || IS_UNSIGNED(_type))
+
+#define IS_FLOATING_POINT(_type) _Generic(_type, \
+    float  : 1,                                  \
+    double : 1,                                  \
+    default: 0                                   \
+)
+
+#define IS_POINTER(_type) #_type[sizeof(#_type) - 2] == '*'
+#define IS_NOT_POINTER(_type) #_type[sizeof(#_type) - 2] != '*'
+
+#define __DECLARE_FIELD2(_type, _name) _type _name;
+#define __DECLARE_FIELD3(_type, _name, _arr_sz) _type _name[_arr_sz];
+
+#define __DECLARE_FIELD_ARGS(_1, _2, _3, x, ...) x
+#define __DECLARE_FIELD(...) __DECLARE_FIELD_ARGS(__VA_ARGS__, __DECLARE_FIELD3, __DECLARE_FIELD2, ERROR) (__VA_ARGS__)
+
+#define __DECLARE_FIELD_INFO(_struct, _type, _name, ...) \
+{ \
+    .type = { .name = #_type }, \
+    .name = #_name, \
+    .size = sizeof(_type), \
+    .offset = offsetof(_struct, _name), \
+    .arr_size = VA_OPT_IF_ELSE(__VA_ARGS__, 0, __VA_ARGS__), \
+    .is_signed = IS_SIGNED(_type), \
+    .is_array = VA_OPT_IF_ELSE(1, 0, __VA_ARGS__), \
+    .is_pointer = IS_POINTER(_type), \
+    .is_integral = IS_INTEGRAL(_type), \
+    .is_floating_point = IS_FLOATING_POINT(_type), \
+    .is_struct = (!IS_INTEGRAL(_type) && !IS_FLOATING_POINT(_type) && IS_NOT_POINTER(_type) && VA_OPT_IF_ELSE(0, 1, __VA_ARGS__)), \
+},
+
+#define __CALL_FN_WITH_ARGS(_fn, _args) _fn _args
+
+#define __OP (
+#define __CP )
+#define __CALL_FN_WITH_ARGS2(_fn, _extra, _args) _fn __OP _extra, SPF_REMOVE_PARENS _args __CP
+
+#if !defined(SPFLIB_TYPE_INFO_DISABLE)
+
+#define STRUCT(_name, ...) \
+    typedef struct \
+    { \
+        SPF_FOREACH_ARG(__CALL_FN_WITH_ARGS, __DECLARE_FIELD, __VA_ARGS__) \
+    } _name; \
+    TypeInfo __type_info_##_name = \
+    { \
+        .name = #_name, \
+        .fields = { \
+            SPF_FOREACH_ARG2(__CALL_FN_WITH_ARGS2, __DECLARE_FIELD_INFO, _name, __VA_ARGS__) \
+        }, \
+        .field_count = VA_COUNT(__VA_ARGS__) \
+    };
+
+#define type_info(_s)   __type_info_##_s
+
+#else // !defined(SPFLIB_TYPE_INFO_DISABLE)
+
+#define STRUCT(_name, ...) \
+    typedef struct \
+    { \
+        SPF_FOREACH_ARG(__CALL_FN_WITH_ARGS, __DECLARE_FIELD, __VA_ARGS__) \
+    } _name;
+
+#define type_info(_s)   (TypeInfo){0}
+
+#endif // !defined(SPFLIB_TYPE_INFO_DISABLE)
+
+#define field_value_of(_struct, _field_type, _field)   *(_field_type*)((u8*)&_struct + _field->offset)
+#define field_ptr_of(_struct, _field_type, _field)   (_field_type*)((u8*)&_struct + _field->offset)
+
+#define field_arr_value_at(_struct, _field_type, _field, _index)  *((_field_type*)((u8*)&_struct + _field->offset) + _index)
+
+#define field_is_f32(_field) (_field->is_floating_point && _field->size == sizeof(float))
+#define field_is_f64(_field) (_field->is_floating_point && _field->size == sizeof(double))
+
+#define field_is_u8(_field)  (_field->is_integral && !_field->is_signed && _field->size == sizeof(u8))
+#define field_is_s8(_field)  (_field->is_integral && _field->is_signed && _field->size == sizeof(s8))
+
+#define field_is_u16(_field) (_field->is_integral && !_field->is_signed && _field->size == sizeof(u16))
+#define field_is_s16(_field) (_field->is_integral && _field->is_signed && _field->size == sizeof(s16))
+
+#define field_is_u32(_field) (_field->is_integral && !_field->is_signed && _field->size == sizeof(u32))
+#define field_is_s32(_field) (_field->is_integral && _field->is_signed && _field->size == sizeof(s32))
+
+#define field_is_u64(_field) (_field->is_integral && !_field->is_signed && _field->size == sizeof(u64))
+#define field_is_s64(_field) (_field->is_integral && _field->is_signed && _field->size == sizeof(s64))
+
+// #define field_is(_field, _name) (strcmp(_field->type.name, #_name) == 0 && sizeof(_name) == _field->size)
+
+#endif // defined(SPFLIB_TYPE_INFO)
+
 // --- string --- //
 
 // TODO: support utf-8, utf-16, utf-32
@@ -503,7 +604,11 @@ typedef struct
 #define STRING_FMT "%.*s"
 #define STRING_ARGS(s) (s32)(s).len, (s).data
 
-#define string(str) str_create((str))
+// #define string(str) str_create((str))
+#define string(_str)  \
+    (sizeof(_str) != sizeof(void*) ?  \
+            str_create_sub(_str, sizeof(_str) - 1) :  \
+            str_create(_str))
 
 #if STDC_VER >= 11 
     #define str_compare(str1, str2) _Generic((str2), \
@@ -515,9 +620,11 @@ typedef struct
 
 // TODO: add str_to_cstr
 
+#define str_len(_str) (sizeof(_str) != sizeof(void*) ? sizeof(_str) - 1 : str_length(_str))
+
 #if !defined(SPFLIB_STRING_IMPL)
 
-size_t str_len(const char* str);
+size_t str_length(const char* str);
 void str_cpy(char* restrict dest, char* restrict src, size_t num);
 string str_create(const char* cstr);
 string str_create_sub(const char* cstr, size_t length);
@@ -533,7 +640,7 @@ string str_clip_suffix(string str, size_t count);
 
 #else // defined(SPFLIB_STRING_IMPL)
 
-size_t str_len(const char* str)
+size_t str_length(const char* str)
 {
     size_t c = 0;
     while (*str++) { c++; }
@@ -1027,6 +1134,10 @@ Vec3 vec3_lerp(Vec3 a, Vec3 b, float s)
 
 // --- print --- //
 
+// TODO:
+// - print _Bool values as true and false instead of 0 and 1
+// - add tsprint function that will format a string to temporary storage
+
 #if !defined(SPFLIB_NO_PRINT)
 
 #if STDC_VER < 11
@@ -1079,7 +1190,7 @@ typedef struct
     float x, y;
 } Vec2;
 
-#define SPF_CUSTOM_PRINT_TYPE_0  Vec2, ("{ x = %f, y = %f }", t.x, t.y),,  // <-- parenthesis are required for the 2nd arg
+#define SPF_CUSTOM_PRINT_TYPE_0  Vec2, ("{ x = %f, y = %f }", t.x, t.y)  // <-- parenthesis are required for the 2nd arg
 
 -- advanced:
 #include <stddef.h>     // size_t
@@ -1281,7 +1392,7 @@ void __spf_sprint(char* buff, size_t buff_sz, const char* fmt, size_t arg_count,
 #else // !defined(SPFLIB_PRINT_IMPL)
 
 #include <stdarg.h>     // va_list, va_start, va_end
-#include <string.h>     // strlen, strncpy TODO: potentially replace with lib's own functions
+#include <string.h>     // strlen, strncpy TODO: potentially replace with standalone functions
 
 void __spf_print(FILE* stream, const char* fmt, size_t arg_count, ...)
 {
@@ -1319,10 +1430,21 @@ void __spf_print(FILE* stream, const char* fmt, size_t arg_count, ...)
             int type = arg_types[current_arg_type];
             current_arg_type++;
 
-            #define __TYPE_CASE(_up, _lw, _prm, _fmt, ...)     \
-                case __SPF_ARG_TYPE_ ## _up: {                 \
-                    fprintf(stream, _fmt, va_arg(list, _prm)); \
-                    break;                                     \
+            
+            #define TYPE__Bool \
+                ,int v = va_arg(list, int); \
+                fprintf(stream, "%s", v ? "true" : "false");
+
+            #define NOT_BOOL(_fmt, _prm) fprintf(stream, _fmt, va_arg(list, _prm));
+
+            #define IS_BOOL(_lw, _fmt, _prm) SPF_CHECK(TYPE_ ## _lw, NOT_BOOL(_fmt, _prm))
+
+            // fprintf(stream, _fmt, va_arg(list, _prm));
+
+            #define __TYPE_CASE(_up, _lw, _prm, _fmt, ...) \
+                case __SPF_ARG_TYPE_ ## _up: {             \
+                    IS_BOOL(_lw, _fmt, _prm);              \
+                    break;                                 \
                 }
 
             #define __CUSTOM_TYPE_CASE(_type, _fmt, _adv_fmt, ...)    \
@@ -1353,6 +1475,10 @@ void __spf_print(FILE* stream, const char* fmt, size_t arg_count, ...)
 
             #undef __TYPE_CASE
             #undef __CUSTOM_TYPE_CASE
+
+            #undef TYPE__Bool 
+            #undef NOT_BOOL
+            #undef IS_BOOL
 
             #undef __SPF_COMMA
             #define __SPF_COMMA ,
@@ -1419,12 +1545,24 @@ void __spf_sprint(char* buff, size_t buff_sz, const char* fmt, size_t arg_count,
             int type = arg_types[current_arg_type];
             current_arg_type++;
 
-            #define __TYPE_CASE(_up, _lw, _prm, _fmt, ...)                                             \
-                case __SPF_ARG_TYPE_ ## _up: {                                                         \
-                    if (buff_pos >= buff_sz - 1) goto end;                                             \
-                    int n = snprintf(buff + buff_pos, (buff_sz - buff_pos), _fmt, va_arg(list, _prm)); \
-                    buff_pos += n;                                                                     \
-                    break;                                                                             \
+
+            #define TYPE__Bool \
+                ,int v = va_arg(list, int); \
+                int n = snprintf(buff + buff_pos, (buff_sz - buff_pos), "%s", v ? "true" : "false"); \
+
+            #define NOT_BOOL(_fmt, _prm) \
+                int n = snprintf(buff + buff_pos, (buff_sz - buff_pos), _fmt, va_arg(list, _prm));
+
+            #define IS_BOOL(_lw, _fmt, _prm) SPF_CHECK(TYPE_ ## _lw, NOT_BOOL(_fmt, _prm))
+
+            // int n = snprintf(buff + buff_pos, (buff_sz - buff_pos), _fmt, va_arg(list, _prm));
+
+            #define __TYPE_CASE(_up, _lw, _prm, _fmt, ...) \
+                case __SPF_ARG_TYPE_ ## _up: {             \
+                    if (buff_pos >= buff_sz - 1) goto end; \
+                    IS_BOOL(_lw, _fmt, _prm);              \
+                    buff_pos += n;                         \
+                    break;                                 \
                 }
 
             #define __CUSTOM_TYPE_CASE(_type, _fmt, _adv_fmt, _adv_sfmt, ...)                     \
@@ -1466,6 +1604,10 @@ void __spf_sprint(char* buff, size_t buff_sz, const char* fmt, size_t arg_count,
             #undef __TYPE_CASE
             #undef __CUSTOM_TYPE_CASE
 
+            #undef TYPE__Bool 
+            #undef NOT_BOOL
+            #undef IS_BOOL
+
             #undef __SPF_COMMA
             #define __SPF_COMMA ,
 
@@ -1504,15 +1646,6 @@ end:
 // - add functions like mem_cpy, mem_set
 
 // - temp - //
-// struct __spf_TempStorage
-// {
-//     void*  data;
-//     size_t capacity;
-//     size_t pos_bytes;
-// } __temp_storage = {0}; // TODO: get rid of this global var
-//
-// #define temporary_storage &__temp_storage 
-
 struct __spf_TempStorage;
 
 #define temporary_storage __spf_temp_get_state()
@@ -1547,6 +1680,17 @@ typedef struct
 
 // - managament - //
 
+#if STDC_VER < 11
+
+#define new_linear(_type, _sz, _alloc) __spf_new_alloc_linear(sizeof(_type), _sz, _alloc)
+#define new_temp(_type, _sz) __spf_new_alloc_temp(sizeof(_type), _sz, temporary_storage)
+#define new(_type, _sz) __spf_new_alloc_default(sizeof(_type), _sz, 0)
+
+#define delete_linear(_la) __spf_linear_delete(la)
+#define delete(_ptr) free(la)
+
+#else // STDC_VER < 11
+
 #define __call_new(_t_sz, _sz, _alloc) _Generic((_alloc), \
     LinearAllocator*         : __spf_new_alloc_linear,    \
     struct __spf_TempStorage*: __spf_new_alloc_temp,      \
@@ -1576,6 +1720,8 @@ typedef struct
     default         : free                 \
 ) (_a)
 
+#endif // STDC_VER < 11
+
 #if !defined(SPFLIB_MEMORY_IMPL)
 
 // - temp - //
@@ -1601,6 +1747,10 @@ void* __spf_new_alloc_temp(size_t type_sz, size_t size, struct __spf_TempStorage
 // these will never get called
 void* __spf_new_dummy_la(size_t _, LinearAllocator* __, int ___);
 void* __spf_new_dummy_tmp(size_t _, struct __spf_TempStorage* __, int ___);
+
+// - misc - //
+void mem_zero(void* dest, size_t count);
+bool mem_equal(void* mem, void* mem2, size_t count);
 
 #else // !defined(SPFLIB_MEMORY_IMPL)
 
@@ -1730,6 +1880,22 @@ void* __spf_new_dummy_la(size_t _, LinearAllocator* __, int ___)
 void* __spf_new_dummy_tmp(size_t _, struct __spf_TempStorage* __, int ___)
 {
     return (void*)0xDEADBEEF;
+}
+
+// - misc - //
+void mem_zero(void* dest, size_t count)
+{
+    while (count--) {
+        *(u8*)dest++ = 0;
+    }
+}
+
+bool mem_equal(void* mem, void* mem2, size_t count)
+{
+    while (count--) {
+        if (*(u8*)mem++ != *(u8*)mem2++) return false;
+    }
+    return true;
 }
 
 #endif // !defined(SPFLIB_MEMORY_IMPL)
