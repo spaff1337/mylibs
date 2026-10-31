@@ -17,6 +17,7 @@
 #   define SPFLIB_VEC3_IMPL
 #   define SPFLIB_PRINT_IMPL
 #   define SPFLIB_MEMORY_IMPL
+#   define SPFLIB_TESTING_IMPL
 #endif
 
 // -- general utils -- //
@@ -25,6 +26,7 @@
 #include <stdint.h>
 
 // TODO:
+// - unit testing
 // - is nan anf infinity checks
 // - string to int, string to float etc
 // - window creation (GLFW) and opengl context
@@ -34,7 +36,8 @@
 // - profiler
 // - platform specific actions like clipboard, opening url etc
 // - dynamic array, hashmap, more data structures
-// - unit testing
+// - time management getting current time, date etc
+// - global error status for things like a failing to open a file etc
 
 // detect operating system
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -161,11 +164,18 @@
 
 #if !defined(bool) && STDC_VER < 23
 #	define bool  _Bool
-#	define true  1
-#	define false 0
+#	define true  ((_Bool)1)
+#	define false ((_Bool)0)
 #endif
 
-#define UNUSED(u) (void)u
+#if !defined(max)
+#   define max(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+#if !defined(min)
+#   define min(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#define UNUSED (void)
 #define cast(t) (t)
 #define fallthrough
 
@@ -205,6 +215,9 @@
 #   if !defined(thread_local)
 #       define thread_local   _Thread_local
 #   endif
+#   if !defined(noreturn)
+#       define noreturn       _Noreturn
+#   endif
 #endif
 
 #if STDC_VER >= 11 && !defined(atomic)
@@ -216,6 +229,27 @@
 #endif
 
 #define countof(_arr) (sizeof(_arr) / sizeof(_arr[0]))
+
+
+#define struct(_name)           \
+    typedef struct _name _name; \
+    struct _name
+
+#define union(_name)           \
+    typedef union _name _name; \
+    union _name
+
+#define __enum1(_name)        \
+    typedef enum _name _name; \
+    enum _name
+
+#define __enum2(_name, _type) \
+    typedef _type _name;      \
+    enum
+
+#define __enum_(_1, _2, x, ...) x
+#define enum(...) __enum_(__VA_ARGS__, __enum2, __enum1) (__VA_ARGS__)
+
 
 #define __fori4(_type, _i, _from, _to) for (_type (_i) = (_from); (_i) _to; (_i)++)
 #define __forir4(_type, _i, _from, _to) for (_type (_i) = (_to); (_i)-- > (_from);)
@@ -277,11 +311,10 @@ typedef double   f64;
 
 // TODO: add INC and DEC macros
 
-#define SPF_PAIR_AT_1(_1, _2) _1
-#define SPF_PAIR_AT_2(_1, _2) _2
+#define SPF_PAIR_AT_1(_1, _2, ...) _1
+#define SPF_PAIR_AT_2(_1, _2, ...) _2
 
-#define SPF_CHECK_AT_1(_1, _2, ...) _2
-#define SPF_CHECK(...) SPF_CHECK_AT_1(__VA_ARGS__,)
+#define SPF_CHECK(...) SPF_PAIR_AT_2(__VA_ARGS__,)
 
 #define SPF_EMPTY()
 
@@ -292,8 +325,8 @@ typedef double   f64;
 
 #define SPF_EXPAND_NO_PARENS(...) SPF_EXPAND __VA_ARGS__
 
-#define SPF_CONCAT_(a, b) a ## b
-#define SPF_CONCAT(a, b) SPF_CONCAT_(a, b)
+#define SPF_CONCAT_PRIM(a, b) a ## b
+#define SPF_CONCAT(a, b) SPF_CONCAT_PRIM(a, b)
 
 // https://gustedt.wordpress.com/2010/06/08/detect-empty-macro-arguments/
 #define __SPF_ARG16(_0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, ...) _15
@@ -1159,8 +1192,8 @@ Vec3 vec3_lerp(Vec3 a, Vec3 b, float s)
     _fn(UCHAR,  unsigned char,      int,                "%u",   ...)__SPF_COMMA \
     _fn(SINT16, signed short,       int,                "%d",   ...)__SPF_COMMA \
     _fn(UINT16, unsigned short,     int,                "%u",   ...)__SPF_COMMA \
-    _fn(SINT32, signed int,         signed int,         "%d",   ...)__SPF_COMMA \
-    _fn(UINT32, unsigned int,       unsigned int,       "%u",   ...)__SPF_COMMA \
+    _fn(SINT32, signed int,         signed int,         "%d",   ...) \
+    _fn(UINT32, unsigned int,       unsigned int,       "%u",   ...) \
     _fn(SLONG,  signed long,        signed long,        "%ld",  ...)__SPF_COMMA \
     _fn(ULONG,  unsigned long,      unsigned long,      "%lu",  ...)__SPF_COMMA \
     _fn(SLLONG, signed long long,   signed long long,   "%lld", ...)__SPF_COMMA \
@@ -1344,13 +1377,22 @@ enum
     __SPF_ARG_TYPE_UNKNOWN
 };
 
-#define __TYPE_TO_ENUM_TYPE(_up, _lw, ...)            _lw: __SPF_ARG_TYPE_ ## _up
+#define __IS_CHAR_LITERAL(x) (sizeof(#x) > 3 && ((#x)[0] == '\'' || (#x)[sizeof(#x) - 2] == '\''))
+
+#define __IS_INT_SINT32 ,
+#define __IS_INT_UINT32 ,
+
+#define __IGNORE_INT(_up, _lw) SPF_CHECK(__IS_INT_ ## _up, _lw: __SPF_ARG_TYPE_ ## _up)
+
+#define __TYPE_TO_ENUM_TYPE(_up, _lw, ...)            __IGNORE_INT(_up, _lw)
 #define __TYPE_TO_ENUM_CUSTOM_TYPE(_name, _fmt, ...)  _name: __SPF_ARG_TYPE_CUSTOM_ ## _name,
 
 #undef __SPF_COMMA
 #define __SPF_COMMA ,
 
 #define __GET_ENUM_TYPE_FROM_TYPE(_t) _Generic((_t), \
+    signed int: __IS_CHAR_LITERAL(_t) ? __SPF_ARG_TYPE_CHAR : __SPF_ARG_TYPE_SINT32, \
+    unsigned int: __IS_CHAR_LITERAL(_t) ? __SPF_ARG_TYPE_CHAR : __SPF_ARG_TYPE_UINT32, \
     __ITER_TYPES(__TYPE_TO_ENUM_TYPE)                \
     __ITER_CUSTOM_TYPES(__TYPE_TO_ENUM_CUSTOM_TYPE)  \
     default: __SPF_ARG_TYPE_UNKNOWN                  \
@@ -1634,6 +1676,18 @@ end:
 
 #endif // !defined(SPFLIB_PRINT_IMPL)
 
+#define SPFLIB_PRINTING_DISABLED
+
+#else // !defined(SPFLIB_NO_PRINT)
+
+#define SPFLIB_PRINTING_DISABLED ,
+
+#define print_stream(_stream, _fmt, ...) fprintf(_stream, _fmt VA_OPT((,__VA_ARGS__), __VA_ARGS__));
+#define print(_fmt, ...) printf(_fmt VA_OPT((,__VA_ARGS__), __VA_ARGS__));
+#define println_stream(_stream, _fmt, ...) do { fprintf(_stream, _fmt VA_OPT((,__VA_ARGS__), __VA_ARGS__)); fprintf(_stream, "\n"); } while (0)
+#define println(_fmt, ...) do { printf(_fmt VA_OPT((,__VA_ARGS__), __VA_ARGS__)); printf("\n"); } while (0)
+#define sprint(_buff, _buff_sz, _fmt, ...) sprintf(_buff, _buff_sz, _fmt VA_OPT((,__VA_ARGS__), __VA_ARGS__))
+
 #endif // !defined(SPFLIB_NO_PRINT)
 
 // --- memory --- //
@@ -1687,7 +1741,7 @@ typedef struct
 #define new(_type, _sz) __spf_new_alloc_default(sizeof(_type), _sz, 0)
 
 #define delete_linear(_la) __spf_linear_delete(la)
-#define delete(_ptr) free(la)
+#define delete(_ptr) free(_ptr)
 
 #else // STDC_VER < 11
 
@@ -1845,7 +1899,7 @@ void __spf_linear_delete(LinearAllocator* la)
     allocator_linear_reset(la);
 
     free(la->data);
-    la->data = nullptr;
+    la->data     = nullptr;
     la->capacity = 0;
 }
 
@@ -1901,5 +1955,196 @@ bool mem_equal(void* mem, void* mem2, size_t count)
 #endif // !defined(SPFLIB_MEMORY_IMPL)
 
 #endif // !defined(SPFLIB_NO_MEMORY)
+
+// -- unit testing -- //
+
+#if defined(SPFLIB_TESTING)
+
+/*
+-- example
+
+UTEST(addition)
+{
+    EXPECT_EQ(2 + 2, 4);
+    EXPECT_EQ(80 + 20, 100);
+    EXPECT_EQ(400 + 1500, 2000); // intentional error
+    EXPECT_EQ(333 + 333 + 333, 999);
+}
+
+UTEST(subtraction)
+{
+    EXPECT_EQ(10 - 5, 5);
+}
+
+int main(void)
+{
+    REGISTER_TEST(addition);
+    REGISTER_TEST(subtraction);
+    return RUN_ALL_TESTS();
+}
+
+*/
+
+typedef void(*__utest_fn)(void);
+
+struct __utest_info
+{
+    const char* name;
+    __utest_fn test_fn;
+    bool failed;
+};
+
+struct __utest_global_state
+{
+    s32 tests_passed;
+    s32 tests_failed;
+    s32 tests_count;
+    s32 current_test_running_index;
+    struct __utest_info tests[256];
+};
+
+#define UTEST(_name) \
+    static void __test_ ## _name(void)
+
+#define REGISTER_TEST(_name) \
+    do { \
+        struct __utest_global_state* state = __utest_get_state(); \
+        state->tests[state->tests_count++] = (struct __utest_info) \
+        {  \
+            .name = #_name,  \
+            .test_fn = __test_ ## _name,  \
+            .failed = false  \
+        }; \
+    } while (0)
+
+#define __IF_PRINTING_ALLOWED(_expr, _val) SPF_CHECK(SPFLIB_PRINTING_DISABLED, \
+        println("           Expected =  '%'", (_val)); \
+        println("           Got      =  '%'", (_expr)); \
+)
+
+#define EXPECT_EQ(_expr, _val) \
+    do { \
+        struct __utest_global_state* state = __utest_get_state(); \
+        if ((_expr) != (_val)) { \
+            printf("   [EXPECT] Expression: '%s'\n", (#_expr)); \
+            printf("       [FAILED]\n");  \
+            printf("           %s:%d error: Expected equality.\n", __FILE__, __LINE__);  \
+            __IF_PRINTING_ALLOWED(_expr, _val) \
+            printf("\n"); \
+            state->tests[state->current_test_running_index].failed = true; \
+        } \
+    } while (0)
+
+#define EXPECT_TRUE(_expr, ...) \
+    do { \
+        struct __utest_global_state* state = __utest_get_state(); \
+        if (!(_expr)) { \
+            printf("   [EXPECT] Expression: '%s'\n", (#_expr)); \
+            printf("       [FAILED]\n");  \
+            printf("           %s:%d error: Expected expression to be true.\n", __FILE__, __LINE__);  \
+            VA_OPT(( \
+                printf("               \n"); \
+                println(__VA_ARGS__); \
+            ), __VA_ARGS__) \
+            printf("\n"); \
+            state->tests[state->current_test_running_index].failed = true; \
+        } \
+    } while (0)
+
+#define UTEST_EPSILON 0.00001f
+
+#define EXPECT_FLOAT_EQ(_f, _f2) \
+    do { \
+        struct __utest_global_state* state = __utest_get_state(); \
+        bool are_equal = (max(_f, _f2) - min(_f, _f2)) < UTEST_EPSILON; \
+        if (!are_equal) { \
+            printf("   [FLOAT EXPECT] Parameters: '%f', '%f'\n", _f, _f2); \
+            printf("       [FAILED]\n");  \
+            printf("           %s:%d error: Expected equality.\n", __FILE__, __LINE__);  \
+            printf("\n"); \
+            state->tests[state->current_test_running_index].failed = true; \
+        } \
+    } while (0)
+
+#define ASSERT_EQ(_expr, _val) \
+    do { \
+        struct __utest_global_state* state = __utest_get_state(); \
+        if ((_expr) != (_val)) { \
+            printf("   [ASSERT] Expression: '%s'\n", (#_expr)); \
+            printf("       [ASSERTION FAILED]\n");  \
+            printf("           %s:%d error: Expected equality.\n", __FILE__, __LINE__);  \
+            __IF_PRINTING_ALLOWED(_expr, _val) \
+            printf("\n"); \
+            state->tests[state->current_test_running_index].failed = true; \
+            return; \
+        } \
+    } while (0)
+
+#define ASSERT_TRUE(_expr, ...) \
+    do { \
+        struct __utest_global_state* state = __utest_get_state(); \
+        if (!(_expr)) { \
+            printf("   [ASSERT] Expression: '%s'\n", (#_expr)); \
+            printf("       [ASSERTION FAILED]\n");  \
+            printf("           %s:%d error: Expected expression to be true.\n", __FILE__, __LINE__);  \
+            VA_OPT(( \
+                printf("               \n"); \
+                println(__VA_ARGS__); \
+            ), __VA_ARGS__) \
+            printf(""); \
+            state->tests[state->current_test_running_index].failed = true; \
+            return; \
+        } \
+    } while (0)
+
+#if !defined(SPFLIB_TESTING_IMPL)
+
+struct __utest_global_state* __utest_get_state();
+int RUN_ALL_TESTS(void);
+
+#else // !defined(SPFLIB_TESTING_IMPL)
+
+struct __utest_global_state* __utest_get_state()
+{
+    static struct __utest_global_state state;
+    return &state;
+}
+
+int RUN_ALL_TESTS(void)
+{
+    struct __utest_global_state* state = __utest_get_state();
+
+    printf("Running %d tests...\n", state->tests_count);
+    printf("\n");
+
+    for (int i = 0; i < state->tests_count; i++) {
+        struct __utest_info info = state->tests[i];
+        state->current_test_running_index = i;
+
+        printf("Running test '%s'...\n", info.name);
+
+        info.test_fn();
+
+        if (state->tests[state->current_test_running_index].failed) {
+            state->tests_failed++;
+            printf("Test '%s' failed.\n", info.name);
+            printf("\n");
+        }
+        else {
+            state->tests_passed++;
+            printf("Test '%s' passed.\n", info.name);
+            printf("\n");
+        }
+    }
+
+    printf("Finished running tests. PASSED %d, FAILED %d.", state->tests_passed, state->tests_failed);
+    printf("\n");
+
+    return !!state->tests_failed;
+}
+
+#endif // !defined(SPFLIB_TESTING_IMPL)
+
+#endif // defined(SPFLIB_TESTING)
 
 #endif // SPFLIB_H
